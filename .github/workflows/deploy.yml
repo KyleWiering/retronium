@@ -42,11 +42,11 @@ jobs:
         run: |
           CURRENT_VERSION="${{ steps.get_version.outputs.current_version }}"
           IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
-          
+
           # Increment patch version
           patch=$((patch + 1))
           NEW_VERSION="$major.$minor.$patch"
-          
+
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
@@ -65,25 +65,25 @@ jobs:
           # Get the commit message
           COMMIT_MSG=$(git log -1 --pretty=%B)
           echo "Commit message: $COMMIT_MSG"
-          
+
           # Extract PR number from merge commit message
           PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP 'Merge pull request #\K\d+' || echo "")
-          
+
           if [ -n "$PR_NUMBER" ]; then
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
             echo "Found PR number: $PR_NUMBER"
-            
+
             # Get PR details using GitHub API
             PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
-            
+
             PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
             PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
             PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.user.login')
-            
+
             echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
             echo "pr_author=$PR_AUTHOR" >> $GITHUB_OUTPUT
-            
+
             # Create release notes
             {
               echo "release_notes<<EOF"
@@ -139,7 +139,7 @@ jobs:
         run: |
           VERSION="${{ needs.version-and-release.outputs.new_version }}"
           sed -i "s|<title>Retronium - Scrum Retro Utility</title>|<title>Retronium - Scrum Retro Utility</title>\n    <meta name=\"version\" content=\"v$VERSION\">|" index.html
-          
+
           # Add version display to the page
           sed -i "s|<h1>Retronium</h1>|<h1>Retronium <span class=\"version\">v$VERSION</span></h1>|" index.html
 
