@@ -645,6 +645,11 @@ textarea {
     color: var(--primary-color);
 }
 
+.votes-remaining.votes-exhausted {
+    background-color: #fee;
+    color: #c33;
+}
+
 /* Phase 4: Discussion */
 .discussion-area {
     display: flex;

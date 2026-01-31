@@ -21,6 +21,10 @@ function generateId(prefix) {
 }
 
 // Caesar cipher for card text encryption (shift by 2)
+// Note: This provides minimal obfuscation, not real security.
+// The purpose is to prevent casual viewing in Phase 1, not to protect against
+// determined attackers. For production use with sensitive data, consider using
+// Web Crypto API with AES encryption.
 function encryptText(text) {
     return text.split('').map(char => {
         const code = char.charCodeAt(0);
@@ -301,6 +305,11 @@ function changeUserRole(peerId, newRole) {
 
 // Session Export/Import
 function exportSession() {
+    // Warn user about exporting decrypted data
+    if (!confirm('This will export all session data including decrypted card text. Do you want to continue?')) {
+        return;
+    }
+    
     const sessionData = {
         version: '1.0',
         exportDate: new Date().toISOString(),
@@ -676,7 +685,7 @@ function updateAllDisplays() {
 // Phase 1: Cards
 function addCard() {
     if (!canComment()) {
-        alert('Only moderators and participants can add cards');
+        alert('You do not have permission to add cards. Only moderators and participants can add cards.');
         return;
     }
     
@@ -960,9 +969,8 @@ function renderVotingPhase() {
     const votesRemainingDiv = document.createElement('div');
     votesRemainingDiv.className = 'votes-remaining';
     if (state.myVotesRemaining === 0) {
-        votesRemainingDiv.style.backgroundColor = '#fee';
-        votesRemainingDiv.style.color = '#c33';
-        votesRemainingDiv.textContent = '🚫 All votes used! You have no votes remaining.';
+        votesRemainingDiv.classList.add('votes-exhausted');
+        votesRemainingDiv.textContent = '🚫 All votes used!';
     } else {
         votesRemainingDiv.textContent = `Votes Remaining: ${state.myVotesRemaining}`;
     }
@@ -1020,7 +1028,7 @@ function createVoteGroupElement(group) {
 
 function voteForGroup(groupId) {
     if (!canVote()) {
-        alert('Guests cannot vote');
+        alert('You do not have permission to vote. Only moderators and participants can vote.');
         return;
     }
     
