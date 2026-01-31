@@ -139,6 +139,13 @@ body {
     font-size: 28px;
 }
 
+.header h1 .version {
+    font-size: 14px;
+    color: var(--text-light);
+    font-weight: normal;
+    margin-left: 8px;
+}
+
 .phase-indicator {
     font-size: 18px;
     color: var(--text-light);
