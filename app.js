@@ -183,8 +183,16 @@ function hostSession() {
         });
         
         state.peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            alert('Connection error: ' + err.message);
+            console.error('Host peer error:', err);
+            let errorMsg = 'Connection error: ' + err.type;
+            if (err.type === 'network') {
+                errorMsg = 'Network error. Please check your internet connection and try again.';
+            } else if (err.type === 'server-error') {
+                errorMsg = 'Server connection error. Please try again in a moment.';
+            } else if (err.message) {
+                errorMsg = 'Connection error: ' + err.message;
+            }
+            alert(errorMsg);
         });
     } catch (error) {
         console.error('Failed to create peer:', error);
@@ -233,8 +241,18 @@ function joinSession() {
         });
         
         state.peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            alert('Connection error: ' + err.message);
+            console.error('Join peer error:', err);
+            let errorMsg = 'Connection error: ' + err.type;
+            if (err.type === 'network') {
+                errorMsg = 'Network error. Please check your internet connection and try again.';
+            } else if (err.type === 'peer-unavailable') {
+                errorMsg = 'Unable to connect to host. The Session ID may be incorrect or the host may be offline.';
+            } else if (err.type === 'server-error') {
+                errorMsg = 'Server connection error. Please try again in a moment.';
+            } else if (err.message) {
+                errorMsg = 'Connection error: ' + err.message;
+            }
+            alert(errorMsg);
         });
     } catch (error) {
         console.error('Failed to join session:', error);
@@ -443,6 +461,16 @@ function setupConnection(conn) {
     });
     
     conn.on('close', () => {
+        const index = state.connections.indexOf(conn);
+        if (index > -1) {
+            state.connections.splice(index, 1);
+        }
+        updateConnectionStatus(state.connections.length > 0 || state.isHost);
+    });
+    
+    conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
         if (index > -1) {
             state.connections.splice(index, 1);
