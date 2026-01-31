@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retronium - Scrum Retro Utility</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Sidebar: Connection Management -->
+        <aside class="sidebar">
+            <h2>Connections</h2>
+            <div class="connection-controls">
+                <div id="host-section">
+                    <button id="host-btn" class="btn btn-primary">Host Session</button>
+                    <div id="host-info" class="hidden">
+                        <p>Your Session ID:</p>
+                        <div class="session-id-container">
+                            <input type="text" id="session-id" readonly>
+                            <button id="copy-btn" class="btn btn-small">Copy</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="join-section">
+                    <input type="text" id="peer-id-input" placeholder="Enter Session ID">
+                    <button id="join-btn" class="btn btn-primary">Join Session</button>
+                </div>
+            </div>
+            <div class="participants">
+                <h3>Participants</h3>
+                <ul id="participants-list"></ul>
+            </div>
+            <div class="connection-status">
+                <span id="status-indicator" class="status-disconnected"></span>
+                <span id="status-text">Not Connected</span>
+            </div>
+        </aside>
+
+        <!-- Main Content: Retro Process -->
+        <main class="main-content">
+            <header class="header">
+                <h1>Retronium</h1>
+                <div class="phase-indicator">
+                    <span id="current-phase">Phase 1: Enter Cards</span>
+                </div>
+            </header>
+
+            <!-- Phase Navigation -->
+            <nav class="phase-nav">
+                <button class="phase-btn active" data-phase="1">1. Cards</button>
+                <button class="phase-btn" data-phase="2">2. Group</button>
+                <button class="phase-btn" data-phase="3">3. Vote</button>
+                <button class="phase-btn" data-phase="4">4. Discuss</button>
+                <button class="phase-btn" data-phase="5">5. Actions</button>
+            </nav>
+
+            <!-- Phase 1: Enter Cards -->
+            <section id="phase-1" class="phase active">
+                <div class="phase-content">
+                    <h2>What went well? What didn't? What can we improve?</h2>
+                    <div class="card-input-container">
+                        <textarea id="card-text" placeholder="Enter your thoughts..." rows="3"></textarea>
+                        <div class="card-controls">
+                            <select id="card-category">
+                                <option value="good">👍 Good</option>
+                                <option value="bad">👎 Bad</option>
+                                <option value="improve">💡 Improve</option>
+                            </select>
+                            <button id="add-card-btn" class="btn btn-primary">Add Card</button>
+                        </div>
+                    </div>
+                    <div class="cards-display">
+                        <div class="card-column">
+                            <h3>👍 Good</h3>
+                            <div id="good-cards" class="card-list"></div>
+                        </div>
+                        <div class="card-column">
+                            <h3>👎 Bad</h3>
+                            <div id="bad-cards" class="card-list"></div>
+                        </div>
+                        <div class="card-column">
+                            <h3>💡 Improve</h3>
+                            <div id="improve-cards" class="card-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Phase 2: Group Cards -->
+            <section id="phase-2" class="phase">
+                <div class="phase-content">
+                    <h2>Group Similar Cards</h2>
+                    <p class="instructions">Drag cards together to create groups. Click a group to name it.</p>
+                    <div class="grouping-area" id="grouping-area">
+                        <!-- Cards will be populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Phase 3: Vote on Groups -->
+            <section id="phase-3" class="phase">
+                <div class="phase-content">
+                    <h2>Vote on Priority Groups</h2>
+                    <p class="instructions">Each participant gets 3 votes. Click on groups to vote.</p>
+                    <div id="voting-area" class="voting-area">
+                        <!-- Groups will be displayed here for voting -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Phase 4: Discussion -->
+            <section id="phase-4" class="phase">
+                <div class="phase-content">
+                    <h2>Discussion</h2>
+                    <p class="instructions">Discuss each group in order of votes.</p>
+                    <div id="discussion-area" class="discussion-area">
+                        <!-- Sorted groups for discussion -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Phase 5: Action Items -->
+            <section id="phase-5" class="phase">
+                <div class="phase-content">
+                    <h2>Action Items</h2>
+                    <div class="action-input-container">
+                        <textarea id="action-text" placeholder="Enter action item..." rows="2"></textarea>
+                        <input type="text" id="action-owner" placeholder="Owner">
+                        <button id="add-action-btn" class="btn btn-primary">Add Action</button>
+                    </div>
+                    <div id="action-items-list" class="action-items-list">
+                        <!-- Action items will be listed here -->
+                    </div>
+                    <button id="export-btn" class="btn btn-secondary">Export Summary</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
