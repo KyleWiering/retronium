@@ -1,0 +1,158 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  version-and-release:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current version
+        id: get_version
+        run: |
+          if [ -f version.txt ]; then
+            CURRENT_VERSION=$(cat version.txt)
+          else
+            CURRENT_VERSION="0.0.0"
+          fi
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT_VERSION"
+
+      - name: Determine version bump
+        id: version
+        run: |
+          CURRENT_VERSION="${{ steps.get_version.outputs.current_version }}"
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+
+          # Increment patch version
+          patch=$((patch + 1))
+          NEW_VERSION="$major.$minor.$patch"
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update version file
+        run: |
+          echo "${{ steps.version.outputs.new_version }}" > version.txt
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add version.txt
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }} [skip ci]"
+          git push
+
+      - name: Get PR information
+        id: pr_info
+        run: |
+          # Get the commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Extract PR number from merge commit message
+          PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP 'Merge pull request #\K\d+' || echo "")
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "Found PR number: $PR_NUMBER"
+
+            # Get PR details using GitHub API
+            PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+
+            PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+            PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
+            PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.user.login')
+
+            echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+            echo "pr_author=$PR_AUTHOR" >> $GITHUB_OUTPUT
+
+            # Create release notes
+            {
+              echo "release_notes<<EOF"
+              echo "## What's Changed"
+              echo ""
+              echo "- $PR_TITLE (#$PR_NUMBER) by @$PR_AUTHOR"
+              if [ -n "$PR_BODY" ] && [ "$PR_BODY" != "null" ]; then
+                echo ""
+                echo "### Details"
+                echo "$PR_BODY"
+              fi
+              echo ""
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ steps.get_version.outputs.current_version }}...v${{ steps.version.outputs.new_version }}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "No PR number found in commit message"
+            {
+              echo "release_notes<<EOF"
+              echo "## What's Changed"
+              echo ""
+              echo "$COMMIT_MSG"
+              echo ""
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ steps.get_version.outputs.current_version }}...v${{ steps.version.outputs.new_version }}"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: Release v${{ steps.version.outputs.new_version }}
+          body: ${{ steps.pr_info.outputs.release_notes }}
+          draft: false
+          prerelease: false
+
+  deploy:
+    needs: version-and-release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Pull latest changes
+        run: git pull origin main
+
+      - name: Add version to HTML
+        run: |
+          VERSION="${{ needs.version-and-release.outputs.new_version }}"
+          sed -i "s|<title>Retronium - Scrum Retro Utility</title>|<title>Retronium - Scrum Retro Utility</title>\n    <meta name=\"version\" content=\"v$VERSION\">|" index.html
+
+          # Add version display to the page
+          sed -i "s|<h1>Retronium</h1>|<h1>Retronium <span class=\"version\">v$VERSION</span></h1>|" index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

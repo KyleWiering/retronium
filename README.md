@@ -16,6 +16,11 @@ A client-side only web application for conducting scrum retrospectives with peer
 
 ## Getting Started
 
+### Live Demo
+
+The application is automatically deployed to GitHub Pages on every merge to main:
+🌐 **[https://kylewiering.github.io/retronium/](https://kylewiering.github.io/retronium/)**
+
 ### Running Locally
 
 1. Clone the repository:
@@ -104,6 +109,32 @@ Modern browsers with WebRTC support:
 - **Peer-to-peer**: Direct browser-to-browser communication using WebRTC
 - **State management**: Centralized state with broadcast synchronization
 - **Responsive design**: Works on desktop and mobile devices
+
+## Deployment & Releases
+
+### Automated Deployment
+
+The application is automatically deployed to GitHub Pages when changes are merged to the `main` branch. The deployment workflow:
+
+1. **Versioning**: Automatically increments the patch version (e.g., 0.1.0 → 0.1.1)
+2. **Release Creation**: Creates a GitHub release with the new version tag
+3. **Release Notes**: Automatically includes PR information and changelog
+4. **GitHub Pages**: Deploys the updated application to GitHub Pages
+
+### Versioning
+
+Versions follow semantic versioning (MAJOR.MINOR.PATCH):
+- The current version is stored in `version.txt`
+- The version is displayed in the application header
+- Each merge to main automatically increments the patch version
+
+### Releases
+
+Every merge to main triggers:
+- A new version tag (e.g., `v0.1.1`)
+- A GitHub release with the version number
+- Release notes containing the PR title, description, and author
+- A link to the full changelog between versions
 
 ## Contributing
 
