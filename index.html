@@ -44,7 +44,33 @@
                 <div class="phase-indicator">
                     <span id="current-phase">Phase 1: Enter Cards</span>
                 </div>
+                <div class="settings-menu-container">
+                    <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+                    <div id="settings-dropdown" class="settings-dropdown hidden">
+                        <div class="settings-section" id="moderator-controls">
+                            <h4>Moderator Controls</h4>
+                            <button id="manage-roles-btn" class="dropdown-item">Manage Roles</button>
+                        </div>
+                        <div class="settings-section">
+                            <h4>Session</h4>
+                            <button id="export-session-btn" class="dropdown-item">Export Session</button>
+                            <button id="import-session-btn" class="dropdown-item">Import Session</button>
+                            <input type="file" id="import-file-input" accept=".json" class="hidden">
+                        </div>
+                    </div>
+                </div>
             </header>
+
+            <!-- Role Management Modal -->
+            <div id="role-modal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Manage User Roles</h3>
+                        <button class="modal-close" id="close-role-modal">×</button>
+                    </div>
+                    <div class="modal-body" id="role-management-list"></div>
+                </div>
+            </div>
 
             <!-- Phase Navigation -->
             <nav class="phase-nav">
