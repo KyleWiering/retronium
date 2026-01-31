@@ -11,8 +11,13 @@ const state = {
     votes: {},
     myVotesRemaining: 3,
     actionItems: [],
-    username: `User${Math.floor(Math.random() * 1000)}`
+    username: `User${Math.floor(Math.random() * 10000)}`
 };
+
+// Utility Functions
+function generateId(prefix) {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -50,6 +55,12 @@ function initializeEventListeners() {
 
 // Connection Management
 function hostSession() {
+    // Prompt for username
+    const username = prompt('Enter your name:', state.username);
+    if (username && username.trim()) {
+        state.username = username.trim();
+    }
+    
     try {
         state.peer = new Peer();
         state.isHost = true;
@@ -84,6 +95,12 @@ function joinSession() {
     if (!peerId) {
         alert('Please enter a session ID');
         return;
+    }
+    
+    // Prompt for username
+    const username = prompt('Enter your name:', state.username);
+    if (username && username.trim()) {
+        state.username = username.trim();
     }
     
     try {
@@ -280,14 +297,44 @@ function updateConnectionStatus(connected) {
 
 function copySessionId() {
     const sessionId = document.getElementById('session-id');
-    sessionId.select();
-    document.execCommand('copy');
-    
     const btn = document.getElementById('copy-btn');
-    btn.textContent = 'Copied!';
-    setTimeout(() => {
-        btn.textContent = 'Copy';
-    }, 2000);
+    
+    // Use modern Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sessionId.value)
+            .then(() => {
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy:', err);
+                // Fallback to older method
+                sessionId.select();
+                try {
+                    document.execCommand('copy');
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        btn.textContent = 'Copy';
+                    }, 2000);
+                } catch (e) {
+                    alert('Failed to copy. Please copy manually.');
+                }
+            });
+    } else {
+        // Fallback for older browsers
+        sessionId.select();
+        try {
+            document.execCommand('copy');
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = 'Copy';
+            }, 2000);
+        } catch (e) {
+            alert('Failed to copy. Please copy manually.');
+        }
+    }
 }
 
 // Phase Management
@@ -357,7 +404,7 @@ function addCard() {
     }
     
     const card = {
-        id: `card-${Date.now()}-${Math.random()}`,
+        id: generateId('card'),
         text: text,
         category: categorySelect.value,
         author: state.username,
@@ -552,7 +599,7 @@ function setupDropZone(element) {
 
 function createNewGroup() {
     const group = {
-        id: `group-${Date.now()}-${Math.random()}`,
+        id: generateId('group'),
         name: 'New Group',
         cardIds: []
     };
@@ -764,7 +811,7 @@ function addActionItem() {
     }
     
     const action = {
-        id: `action-${Date.now()}-${Math.random()}`,
+        id: generateId('action'),
         text: text,
         owner: owner || 'Unassigned',
         completed: false,
