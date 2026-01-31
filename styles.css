@@ -131,6 +131,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 20px;
 }
 
 .header h1 {
@@ -141,6 +142,201 @@ body {
 .phase-indicator {
     font-size: 18px;
     color: var(--text-light);
+    flex: 1;
+}
+
+/* Settings Menu */
+.settings-menu-container {
+    position: relative;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.icon-btn:hover {
+    background-color: var(--bg-color);
+}
+
+.settings-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 10px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    min-width: 250px;
+    z-index: 1000;
+}
+
+.settings-section {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+}
+
+.settings-section h4 {
+    margin-bottom: 10px;
+    color: var(--text-light);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.dropdown-item {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    font-size: 14px;
+    margin-bottom: 5px;
+}
+
+.dropdown-item:last-child {
+    margin-bottom: 0;
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-color);
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal-content {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-light);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+}
+
+.modal-close:hover {
+    color: var(--danger-color);
+}
+
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.role-user-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+    margin-bottom: 10px;
+}
+
+.role-user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.role-user-name {
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.role-badge.moderator {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+.role-badge.participant {
+    background-color: #dcfce7;
+    color: #15803d;
+}
+
+.role-badge.guest {
+    background-color: #fef3c7;
+    color: #a16207;
+}
+
+.role-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.role-controls select {
+    width: auto;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+/* Card blur effect */
+.card-blurred {
+    filter: blur(5px);
+    user-select: none;
+    pointer-events: none;
+}
+
+.card-blurred .card-content {
+    color: transparent;
+    text-shadow: 0 0 8px rgba(0,0,0,0.5);
 }
 
 /* Phase Navigation */
@@ -447,6 +643,11 @@ textarea {
     font-size: 18px;
     font-weight: 600;
     color: var(--primary-color);
+}
+
+.votes-remaining.votes-exhausted {
+    background-color: #fee;
+    color: #c33;
 }
 
 /* Phase 4: Discussion */

@@ -5,18 +5,76 @@ const state = {
     isHost: false,
     peer: null,
     connections: [],
-    participants: [],
+    participants: [], // Will now store objects: {username, peerId, role}
     cards: [],
     groups: [],
     votes: {},
     myVotesRemaining: 3,
     actionItems: [],
-    username: `User${Math.floor(Math.random() * 10000)}`
+    username: `User${Math.floor(Math.random() * 10000)}`,
+    myRole: 'participant' // moderator, participant, or guest
 };
 
 // Utility Functions
 function generateId(prefix) {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Caesar cipher for card text encryption (shift by 2)
+// Note: This provides minimal obfuscation, not real security.
+// The purpose is to prevent casual viewing in Phase 1, not to protect against
+// determined attackers. For production use with sensitive data, consider using
+// Web Crypto API with AES encryption.
+function encryptText(text) {
+    return text.split('').map(char => {
+        const code = char.charCodeAt(0);
+        // Handle lowercase letters
+        if (code >= 97 && code <= 122) {
+            return String.fromCharCode(((code - 97 + 2) % 26) + 97);
+        }
+        // Handle uppercase letters
+        if (code >= 65 && code <= 90) {
+            return String.fromCharCode(((code - 65 + 2) % 26) + 65);
+        }
+        // Return other characters as-is
+        return char;
+    }).join('');
+}
+
+function decryptText(text) {
+    return text.split('').map(char => {
+        const code = char.charCodeAt(0);
+        // Handle lowercase letters
+        if (code >= 97 && code <= 122) {
+            return String.fromCharCode(((code - 97 - 2 + 26) % 26) + 97);
+        }
+        // Handle uppercase letters
+        if (code >= 65 && code <= 90) {
+            return String.fromCharCode(((code - 65 - 2 + 26) % 26) + 65);
+        }
+        // Return other characters as-is
+        return char;
+    }).join('');
+}
+
+function getMyRole() {
+    return state.myRole;
+}
+
+function canModerate() {
+    return state.myRole === 'moderator';
+}
+
+function canVote() {
+    return state.myRole === 'moderator' || state.myRole === 'participant';
+}
+
+function canComment() {
+    return state.myRole === 'moderator' || state.myRole === 'participant';
+}
+
+function canNavigate() {
+    return state.myRole === 'moderator';
 }
 
 // Initialize the application
@@ -32,11 +90,40 @@ function initializeEventListeners() {
     document.getElementById('join-btn').addEventListener('click', joinSession);
     document.getElementById('copy-btn').addEventListener('click', copySessionId);
     
+    // Settings menu
+    document.getElementById('settings-btn').addEventListener('click', toggleSettingsMenu);
+    document.getElementById('manage-roles-btn').addEventListener('click', openRoleModal);
+    document.getElementById('export-session-btn').addEventListener('click', exportSession);
+    document.getElementById('import-session-btn').addEventListener('click', () => {
+        document.getElementById('import-file-input').click();
+    });
+    document.getElementById('import-file-input').addEventListener('change', importSession);
+    document.getElementById('close-role-modal').addEventListener('click', closeRoleModal);
+    
+    // Close modals and dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+        const settingsMenu = document.getElementById('settings-dropdown');
+        const settingsBtn = document.getElementById('settings-btn');
+        if (!settingsMenu.contains(e.target) && !settingsBtn.contains(e.target)) {
+            settingsMenu.classList.add('hidden');
+        }
+    });
+    
+    document.getElementById('role-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'role-modal') {
+            closeRoleModal();
+        }
+    });
+    
     // Phase navigation
     document.querySelectorAll('.phase-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const phase = parseInt(e.target.dataset.phase);
-            changePhase(phase);
+            if (canNavigate()) {
+                changePhase(phase);
+            } else {
+                alert('Only moderators can change phases');
+            }
         });
     });
     
@@ -64,6 +151,7 @@ function hostSession() {
     try {
         state.peer = new Peer();
         state.isHost = true;
+        state.myRole = 'moderator'; // Host is moderator by default
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
@@ -72,7 +160,8 @@ function hostSession() {
             document.getElementById('host-btn').disabled = true;
             updateConnectionStatus(true);
             
-            addParticipant(state.username, true);
+            addParticipant(state.username, state.myPeerId, 'moderator', true);
+            updateModeratorControls();
             broadcastState();
         });
         
@@ -105,6 +194,7 @@ function joinSession() {
     
     try {
         state.peer = new Peer();
+        state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
@@ -113,6 +203,7 @@ function joinSession() {
             
             document.getElementById('join-btn').disabled = true;
             updateConnectionStatus(true);
+            updateModeratorControls();
         });
         
         state.peer.on('error', (err) => {
@@ -125,6 +216,174 @@ function joinSession() {
     }
 }
 
+// Settings Menu Functions
+function toggleSettingsMenu() {
+    const dropdown = document.getElementById('settings-dropdown');
+    dropdown.classList.toggle('hidden');
+}
+
+function updateModeratorControls() {
+    const moderatorControls = document.getElementById('moderator-controls');
+    if (canModerate()) {
+        moderatorControls.style.display = 'block';
+    } else {
+        moderatorControls.style.display = 'none';
+    }
+}
+
+function openRoleModal() {
+    document.getElementById('role-modal').classList.remove('hidden');
+    renderRoleManagement();
+}
+
+function closeRoleModal() {
+    document.getElementById('role-modal').classList.add('hidden');
+}
+
+function renderRoleManagement() {
+    const list = document.getElementById('role-management-list');
+    list.innerHTML = '';
+    
+    state.participants.forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'role-user-item';
+        
+        const info = document.createElement('div');
+        info.className = 'role-user-info';
+        
+        const name = document.createElement('div');
+        name.className = 'role-user-name';
+        name.textContent = p.username + (p.username === state.username ? ' (You)' : '');
+        info.appendChild(name);
+        
+        const badge = document.createElement('span');
+        badge.className = `role-badge ${p.role}`;
+        badge.textContent = p.role;
+        info.appendChild(badge);
+        
+        item.appendChild(info);
+        
+        // Only show controls if current user is moderator and not managing themselves
+        if (canModerate() && p.username !== state.username) {
+            const controls = document.createElement('div');
+            controls.className = 'role-controls';
+            
+            const select = document.createElement('select');
+            ['moderator', 'participant', 'guest'].forEach(role => {
+                const option = document.createElement('option');
+                option.value = role;
+                option.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+                option.selected = role === p.role;
+                select.appendChild(option);
+            });
+            
+            select.onchange = (e) => changeUserRole(p.peerId, e.target.value);
+            controls.appendChild(select);
+            
+            item.appendChild(controls);
+        }
+        
+        list.appendChild(item);
+    });
+}
+
+function changeUserRole(peerId, newRole) {
+    const participant = state.participants.find(p => p.peerId === peerId);
+    if (participant) {
+        participant.role = newRole;
+        renderRoleManagement();
+        updateParticipantsList();
+        
+        // Broadcast role change
+        broadcastMessage({
+            type: 'role_changed',
+            peerId: peerId,
+            role: newRole
+        });
+    }
+}
+
+// Session Export/Import
+function exportSession() {
+    // Warn user about exporting decrypted data
+    if (!confirm('This will export all session data including decrypted card text. Do you want to continue?')) {
+        return;
+    }
+    
+    const sessionData = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        participants: state.participants,
+        cards: state.cards.map(card => ({
+            ...card,
+            text: decryptText(card.text) // Export decrypted text for readability
+        })),
+        groups: state.groups,
+        votes: state.votes,
+        actionItems: state.actionItems,
+        currentPhase: state.currentPhase
+    };
+    
+    const json = JSON.stringify(sessionData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `retronium-session-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert('Session exported successfully!');
+}
+
+function importSession(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const sessionData = JSON.parse(e.target.result);
+            
+            // Validate the data structure
+            if (!sessionData.version || !sessionData.cards || !sessionData.groups) {
+                alert('Invalid session file format');
+                return;
+            }
+            
+            // Restore state - encrypt card text on import since export has decrypted text
+            state.cards = sessionData.cards.map(card => ({
+                ...card,
+                text: encryptText(card.text)
+            }));
+            state.groups = sessionData.groups;
+            state.votes = sessionData.votes || {};
+            state.actionItems = sessionData.actionItems || [];
+            state.currentPhase = sessionData.currentPhase || 1;
+            
+            // Don't restore participants as that could conflict with current connections
+            
+            updateAllDisplays();
+            
+            // Broadcast the imported state if host
+            if (state.isHost) {
+                broadcastState();
+            }
+            
+            alert('Session imported successfully!');
+        } catch (error) {
+            console.error('Failed to import session:', error);
+            alert('Failed to import session. Please check the file format.');
+        }
+    };
+    reader.readAsText(file);
+    
+    // Clear the file input
+    event.target.value = '';
+}
+
 function setupConnection(conn) {
     state.connections.push(conn);
     
@@ -133,7 +392,8 @@ function setupConnection(conn) {
         conn.send({
             type: 'join',
             username: state.username,
-            peerId: state.myPeerId
+            peerId: state.myPeerId,
+            role: state.myRole
         });
         
         // If host, send current state
@@ -161,7 +421,7 @@ function setupConnection(conn) {
         if (index > -1) {
             state.connections.splice(index, 1);
         }
-        updateConnectionStatus(state.connections.length > 0);
+        updateConnectionStatus(state.connections.length > 0 || state.isHost);
     });
 }
 
@@ -169,17 +429,34 @@ function handleMessage(data, conn) {
     switch (data.type) {
         case 'join':
             if (state.isHost) {
-                addParticipant(data.username, false);
+                addParticipant(data.username, data.peerId, data.role || 'participant', false);
                 // Broadcast new participant to all
                 broadcastMessage({
                     type: 'participant_added',
-                    username: data.username
+                    username: data.username,
+                    peerId: data.peerId,
+                    role: data.role || 'participant'
                 });
             }
             break;
         
         case 'participant_added':
-            addParticipant(data.username, false);
+            addParticipant(data.username, data.peerId, data.role || 'participant', false);
+            break;
+        
+        case 'role_changed':
+            const participant = state.participants.find(p => p.peerId === data.peerId);
+            if (participant) {
+                participant.role = data.role;
+                
+                // If it's my role that changed, update my local role
+                if (data.peerId === state.myPeerId) {
+                    state.myRole = data.role;
+                    updateModeratorControls();
+                }
+                
+                updateParticipantsList();
+            }
             break;
         
         case 'state':
@@ -190,6 +467,14 @@ function handleMessage(data, conn) {
             state.actionItems = data.state.actionItems || [];
             state.participants = data.state.participants || [];
             state.currentPhase = data.state.currentPhase || 1;
+            
+            // Update my role based on participants list
+            const me = state.participants.find(p => p.peerId === state.myPeerId);
+            if (me) {
+                state.myRole = me.role;
+                updateModeratorControls();
+            }
+            
             updateAllDisplays();
             break;
         
@@ -266,18 +551,23 @@ function broadcastState() {
     });
 }
 
-function addParticipant(username, isMe) {
-    if (!state.participants.includes(username)) {
-        state.participants.push(username);
+function addParticipant(username, peerId, role, isMe) {
+    if (!state.participants.find(p => p.peerId === peerId)) {
+        state.participants.push({
+            username,
+            peerId,
+            role: role || 'participant'
+        });
         updateParticipantsList();
     }
 }
 
 function updateParticipantsList() {
     const list = document.getElementById('participants-list');
-    list.innerHTML = state.participants.map(p => 
-        `<li>${p}${p === state.username ? ' (You)' : ''}</li>`
-    ).join('');
+    list.innerHTML = state.participants.map(p => {
+        const roleEmoji = p.role === 'moderator' ? '👑' : p.role === 'participant' ? '👤' : '👁️';
+        return `<li>${roleEmoji} ${p.username}${p.username === state.username ? ' (You)' : ''}</li>`;
+    }).join('');
 }
 
 function updateConnectionStatus(connected) {
@@ -394,6 +684,11 @@ function updateAllDisplays() {
 
 // Phase 1: Cards
 function addCard() {
+    if (!canComment()) {
+        alert('You do not have permission to add cards. Only moderators and participants can add cards.');
+        return;
+    }
+    
     const textInput = document.getElementById('card-text');
     const categorySelect = document.getElementById('card-category');
     const text = textInput.value.trim();
@@ -405,7 +700,7 @@ function addCard() {
     
     const card = {
         id: generateId('card'),
-        text: text,
+        text: encryptText(text), // Store encrypted text
         category: categorySelect.value,
         author: state.username,
         timestamp: Date.now()
@@ -464,7 +759,21 @@ function createCardElement(card, includeDelete = true) {
     
     const content = document.createElement('div');
     content.className = 'card-content';
-    content.textContent = card.text;
+    
+    // On Cards phase (phase 1), only show decrypted text to author
+    // On other phases, show decrypted text to everyone
+    const isAuthor = card.author === state.username;
+    const isCardsPhase = state.currentPhase === 1;
+    
+    if (isCardsPhase && !isAuthor) {
+        // Show blurred encrypted text to others in phase 1
+        content.textContent = card.text; // Keep it encrypted
+        cardEl.classList.add('card-blurred');
+    } else {
+        // Show decrypted text to author or on other phases
+        content.textContent = decryptText(card.text);
+    }
+    
     cardEl.appendChild(content);
     
     if (includeDelete && card.author === state.username) {
@@ -656,10 +965,15 @@ function renderVotingPhase() {
     const votingArea = document.getElementById('voting-area');
     votingArea.innerHTML = '';
     
-    // Show votes remaining
+    // Show votes remaining with visual indication when exhausted
     const votesRemainingDiv = document.createElement('div');
     votesRemainingDiv.className = 'votes-remaining';
-    votesRemainingDiv.textContent = `Votes Remaining: ${state.myVotesRemaining}`;
+    if (state.myVotesRemaining === 0) {
+        votesRemainingDiv.classList.add('votes-exhausted');
+        votesRemainingDiv.textContent = '🚫 All votes used!';
+    } else {
+        votesRemainingDiv.textContent = `Votes Remaining: ${state.myVotesRemaining}`;
+    }
     votingArea.appendChild(votesRemainingDiv);
     
     // Show groups for voting (only groups with cards)
@@ -713,6 +1027,11 @@ function createVoteGroupElement(group) {
 }
 
 function voteForGroup(groupId) {
+    if (!canVote()) {
+        alert('You do not have permission to vote. Only moderators and participants can vote.');
+        return;
+    }
+    
     if (state.myVotesRemaining <= 0) {
         alert('You have no votes remaining!');
         return;
@@ -887,7 +1206,8 @@ function exportSummary() {
     
     summary += '## Participants\n';
     state.participants.forEach(p => {
-        summary += `- ${p}\n`;
+        const roleLabel = p.role === 'moderator' ? '👑' : p.role === 'participant' ? '👤' : '👁️';
+        summary += `- ${roleLabel} ${p.username} (${p.role})\n`;
     });
     summary += '\n';
     
@@ -906,7 +1226,8 @@ function exportSummary() {
         group.cardIds.forEach(cardId => {
             const card = state.cards.find(c => c.id === cardId);
             if (card) {
-                summary += `- ${card.text}\n`;
+                // Export decrypted text
+                summary += `- ${decryptText(card.text)}\n`;
             }
         });
     });
