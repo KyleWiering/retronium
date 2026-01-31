@@ -149,7 +149,20 @@ function hostSession() {
     }
     
     try {
-        state.peer = new Peer();
+        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        };
+        
+        state.peer = new Peer(peerConfig);
         state.isHost = true;
         state.myRole = 'moderator'; // Host is moderator by default
         
@@ -170,8 +183,16 @@ function hostSession() {
         });
         
         state.peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            alert('Connection error: ' + err.message);
+            console.error('Host peer error:', err);
+            let errorMsg = 'Connection error: ' + err.type;
+            if (err.type === 'network') {
+                errorMsg = 'Network error. Please check your internet connection and try again.';
+            } else if (err.type === 'server-error') {
+                errorMsg = 'Server connection error. Please try again in a moment.';
+            } else if (err.message) {
+                errorMsg = 'Connection error: ' + err.message;
+            }
+            alert(errorMsg);
         });
     } catch (error) {
         console.error('Failed to create peer:', error);
@@ -193,7 +214,20 @@ function joinSession() {
     }
     
     try {
-        state.peer = new Peer();
+        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        };
+        
+        state.peer = new Peer(peerConfig);
         state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
@@ -207,8 +241,18 @@ function joinSession() {
         });
         
         state.peer.on('error', (err) => {
-            console.error('Peer error:', err);
-            alert('Connection error: ' + err.message);
+            console.error('Join peer error:', err);
+            let errorMsg = 'Connection error: ' + err.type;
+            if (err.type === 'network') {
+                errorMsg = 'Network error. Please check your internet connection and try again.';
+            } else if (err.type === 'peer-unavailable') {
+                errorMsg = 'Unable to connect to host. The Session ID may be incorrect or the host may be offline.';
+            } else if (err.type === 'server-error') {
+                errorMsg = 'Server connection error. Please try again in a moment.';
+            } else if (err.message) {
+                errorMsg = 'Connection error: ' + err.message;
+            }
+            alert(errorMsg);
         });
     } catch (error) {
         console.error('Failed to join session:', error);
@@ -417,6 +461,16 @@ function setupConnection(conn) {
     });
     
     conn.on('close', () => {
+        const index = state.connections.indexOf(conn);
+        if (index > -1) {
+            state.connections.splice(index, 1);
+        }
+        updateConnectionStatus(state.connections.length > 0 || state.isHost);
+    });
+    
+    conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
         if (index > -1) {
             state.connections.splice(index, 1);
