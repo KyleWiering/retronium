@@ -149,7 +149,20 @@ function hostSession() {
     }
     
     try {
-        state.peer = new Peer();
+        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        };
+        
+        state.peer = new Peer(peerConfig);
         state.isHost = true;
         state.myRole = 'moderator'; // Host is moderator by default
         
@@ -193,7 +206,20 @@ function joinSession() {
     }
     
     try {
-        state.peer = new Peer();
+        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        };
+        
+        state.peer = new Peer(peerConfig);
         state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
