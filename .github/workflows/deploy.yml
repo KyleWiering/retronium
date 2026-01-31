@@ -113,12 +113,10 @@ jobs:
           fi
 
       - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.new_version }}
-          release_name: Release v${{ steps.version.outputs.new_version }}
+          name: Release v${{ steps.version.outputs.new_version }}
           body: ${{ steps.pr_info.outputs.release_notes }}
           draft: false
           prerelease: false
@@ -133,7 +131,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: main
+
+      - name: Pull latest changes
+        run: git pull origin main
 
       - name: Add version to HTML
         run: |
