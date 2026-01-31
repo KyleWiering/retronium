@@ -525,6 +525,15 @@ function handleMessage(data, conn) {
         case 'phase_changed':
             state.currentPhase = data.phase;
             updatePhaseDisplay();
+            
+            // Update content based on phase
+            if (data.phase === 2) {
+                renderGroupingPhase();
+            } else if (data.phase === 3) {
+                renderVotingPhase();
+            } else if (data.phase === 4) {
+                renderDiscussionPhase();
+            }
             break;
     }
 }
