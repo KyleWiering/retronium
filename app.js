@@ -191,7 +191,8 @@ function buildSessionSnapshot(isOfficial = false) {
             groups: state.groups,
             votes: state.votes,
             actionItems: state.actionItems,
-            participants: state.participants
+            participants: state.participants,
+            myVotesRemaining: state.myVotesRemaining
         }
     };
 }
@@ -406,6 +407,24 @@ function hostSession() {
             setupConnection(conn);
         });
         
+        state.peer.on('disconnected', () => {
+            logNetworkEvent('peer_disconnected', { isHost: true });
+            console.warn('Host peer disconnected from signaling server');
+            
+            // Notify all connected clients that host is going away
+            if (state.connections.length > 0) {
+                broadcastMessage({
+                    type: 'host_disconnecting',
+                    message: 'Host is disconnecting'
+                });
+            }
+            
+            // Try to reconnect
+            if (!state.peer.destroyed) {
+                state.peer.reconnect();
+            }
+        });
+        
         state.peer.on('error', (err) => {
             console.error('Host peer error:', err);
             let errorMsg = 'Connection error: ' + err.type;
@@ -462,6 +481,15 @@ function joinSession() {
             document.getElementById('join-btn').disabled = true;
             updateConnectionStatus(true);
             updateModeratorControls();
+        });
+        
+        state.peer.on('disconnected', () => {
+            logNetworkEvent('peer_disconnected', { isHost: false });
+            console.warn('Client peer disconnected from signaling server');
+            // Try to reconnect if not destroyed
+            if (!state.peer.destroyed) {
+                state.peer.reconnect();
+            }
         });
         
         state.peer.on('error', (err) => {
@@ -727,6 +755,7 @@ function restoreSession(session) {
     state.votes = session.state.votes || {};
     state.actionItems = session.state.actionItems || [];
     state.participants = session.state.participants || [];
+    state.myVotesRemaining = session.state.myVotesRemaining !== undefined ? session.state.myVotesRemaining : 3;
     
     updateAllDisplays();
     
@@ -1026,7 +1055,16 @@ function setupConnection(conn) {
         if (index > -1) {
             state.connections.splice(index, 1);
         }
-        updateConnectionStatus(state.connections.length > 0 || state.isHost);
+        
+        // If this is a client and the host disconnected, show alert
+        if (!state.isHost && state.connections.length === 0) {
+            alert('Host has disconnected. You have been disconnected from the session.');
+            // Reset connection state
+            updateConnectionStatus(false);
+            document.getElementById('join-btn').disabled = false;
+        } else {
+            updateConnectionStatus(state.connections.length > 0 || state.isHost);
+        }
     });
     
     conn.on('error', (err) => {
@@ -1168,6 +1206,19 @@ function handleMessage(data, conn) {
                 resetSession();
             }
             break;
+        
+        case 'host_disconnecting':
+            if (!state.isHost) {
+                alert('Host is disconnecting. The session will end.');
+                // Close all connections
+                state.connections.forEach(conn => {
+                    conn.close();
+                });
+                state.connections = [];
+                updateConnectionStatus(false);
+                document.getElementById('join-btn').disabled = false;
+            }
+            break;
     }
 }
 
@@ -1274,6 +1325,7 @@ function copySessionLink() {
     const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${sessionId}`;
     const btn = document.getElementById('copy-link-btn');
     
+    // Try modern clipboard API first
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(sessionUrl)
             .then(() => {
@@ -1284,11 +1336,49 @@ function copySessionLink() {
             })
             .catch(err => {
                 console.error('Failed to copy link:', err);
-                alert('Failed to copy. Please copy manually:\n' + sessionUrl);
+                // Fallback to older method
+                fallbackCopyTextToClipboard(sessionUrl, btn);
             });
     } else {
-        alert('Link:\n' + sessionUrl);
+        // Use fallback for older browsers
+        fallbackCopyTextToClipboard(sessionUrl, btn);
     }
+}
+
+function fallbackCopyTextToClipboard(text, btn) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            btn.textContent = '✓ Copied!';
+            setTimeout(() => {
+                btn.textContent = '📋 Copy Link';
+            }, 2000);
+        } else {
+            // Last resort: show the URL for manual copy
+            btn.textContent = '❌ Failed';
+            setTimeout(() => {
+                btn.textContent = '📋 Copy Link';
+            }, 2000);
+            console.error('Copy command was unsuccessful');
+        }
+    } catch (err) {
+        btn.textContent = '❌ Failed';
+        setTimeout(() => {
+            btn.textContent = '📋 Copy Link';
+        }, 2000);
+        console.error('Failed to copy text: ', err);
+    }
+    
+    document.body.removeChild(textArea);
 }
 
 function toggleQRCode() {
@@ -1304,19 +1394,27 @@ function toggleQRCode() {
         // Clear previous QR code
         qrCodeDiv.innerHTML = '';
         
-        // Create a canvas for client-side QR code generation
-        const canvas = document.createElement('canvas');
-        const size = 200;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        
-        // Simple client-side QR code using data URL (privacy-preserving)
-        // Generate using inline SVG QR code
+        // Generate proper QR code using QRCode.js library
         try {
-            generateSimpleQRCode(ctx, sessionUrl, size);
-            qrCodeDiv.appendChild(canvas);
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(qrCodeDiv, {
+                    text: sessionUrl,
+                    width: 200,
+                    height: 200,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } else {
+                // Fallback if library not loaded
+                qrCodeDiv.innerHTML = `<div style="padding: 20px; text-align: center; background: #f5f5f5; border-radius: 8px;">
+                    <p style="margin-bottom: 10px;"><strong>Share this link:</strong></p>
+                    <p style="font-size: 12px; word-break: break-all; font-family: monospace; background: white; padding: 10px; border-radius: 4px;">${sessionUrl}</p>
+                    <p style="font-size: 11px; color: #666; margin-top: 10px;">Copy the link above to share the session</p>
+                </div>`;
+            }
         } catch (e) {
+            console.error('Failed to generate QR code:', e);
             // Fallback to text display if QR generation fails
             qrCodeDiv.innerHTML = `<div style="padding: 20px; text-align: center; background: #f5f5f5; border-radius: 8px;">
                 <p style="margin-bottom: 10px;"><strong>Share this link:</strong></p>
@@ -1332,68 +1430,6 @@ function toggleQRCode() {
         qrContainer.classList.add('hidden');
         btn.textContent = '📱 Show QR Code';
         qrCodeDiv.innerHTML = '';
-    }
-}
-
-// Simple QR code generator (basic version for demonstration)
-// Note: This is a simplified implementation. For production, consider using a proper QR library
-function generateSimpleQRCode(ctx, text, size) {
-    // For now, create a simple grid pattern representing a QR code
-    // In a real implementation, you would use a proper QR code algorithm
-    const moduleSize = Math.floor(size / 25);
-    const modules = 25;
-    
-    // White background
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, size, size);
-    
-    // Create a simple hash-based pattern (not a real QR code, but visually similar)
-    ctx.fillStyle = 'black';
-    
-    // Draw positioning patterns (corners)
-    drawPositioningPattern(ctx, 0, 0, moduleSize);
-    drawPositioningPattern(ctx, modules - 7, 0, moduleSize);
-    drawPositioningPattern(ctx, 0, modules - 7, moduleSize);
-    
-    // Create pseudo-random pattern based on text
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) {
-        hash = ((hash << 5) - hash) + text.charCodeAt(i);
-        hash = hash & hash;
-    }
-    
-    // Fill in data modules with hash-based pattern
-    for (let row = 0; row < modules; row++) {
-        for (let col = 0; col < modules; col++) {
-            // Skip positioning patterns
-            if ((row < 7 && col < 7) || (row < 7 && col >= modules - 7) || (row >= modules - 7 && col < 7)) {
-                continue;
-            }
-            
-            // Use hash to determine if module should be filled
-            const val = (hash + row * modules + col) % 2;
-            if (val === 1) {
-                ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize - 1, moduleSize - 1);
-            }
-        }
-    }
-    
-    // Add text below for manual entry
-    ctx.fillStyle = '#666';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'center';
-    const shortUrl = text.split('?')[0] + '?...' + text.split('=')[1]?.substring(0, 8);
-    ctx.fillText(shortUrl, size / 2, size - 5);
-}
-
-function drawPositioningPattern(ctx, startRow, startCol, moduleSize) {
-    // Draw outer square (7x7)
-    for (let i = 0; i < 7; i++) {
-        for (let j = 0; j < 7; j++) {
-            if (i === 0 || i === 6 || j === 0 || j === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4)) {
-                ctx.fillRect((startCol + j) * moduleSize, (startRow + i) * moduleSize, moduleSize - 1, moduleSize - 1);
-            }
-        }
     }
 }
 
