@@ -58,12 +58,21 @@
                         <div class="settings-section" id="moderator-controls">
                             <h4>Moderator Controls</h4>
                             <button id="manage-roles-btn" class="dropdown-item">Manage Roles</button>
+                            <label class="dropdown-item persist-toggle-label">
+                                <input type="checkbox" id="persist-toggle">
+                                <span>Enable Auto-Save</span>
+                            </label>
                         </div>
                         <div class="settings-section">
                             <h4>Session</h4>
+                            <button id="open-sessions-btn" class="dropdown-item">📚 Manage Sessions</button>
                             <button id="export-session-btn" class="dropdown-item">Export Session</button>
                             <button id="import-session-btn" class="dropdown-item">Import Session</button>
                             <input type="file" id="import-file-input" accept=".json" class="hidden">
+                        </div>
+                        <div class="settings-section">
+                            <h4>Debug</h4>
+                            <button id="debug-btn" class="dropdown-item">🔍 Debug Info</button>
                         </div>
                     </div>
                 </div>
@@ -77,6 +86,82 @@
                         <button class="modal-close" id="close-role-modal">×</button>
                     </div>
                     <div class="modal-body" id="role-management-list"></div>
+                </div>
+            </div>
+
+            <!-- Sessions Management Modal -->
+            <div id="sessions-modal" class="modal hidden">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3>Session History</h3>
+                        <button class="modal-close" id="close-sessions-modal">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="sessions-controls">
+                            <button id="save-snapshot-btn" class="btn btn-small btn-primary">💾 Save Current</button>
+                            <button id="new-session-btn" class="btn btn-small btn-secondary">➕ New Session</button>
+                            <button id="export-all-btn" class="btn btn-small">📤 Export All</button>
+                            <button id="clear-sessions-btn" class="btn btn-small btn-danger">🗑️ Clear All</button>
+                        </div>
+                        <div class="retention-control">
+                            <label for="retention-days">Retention (days):</label>
+                            <input type="number" id="retention-days" min="1" max="365" value="30">
+                        </div>
+                        <div id="sessions-list" class="sessions-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Persistence Consent Modal -->
+            <div id="persistence-consent-modal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Session Persistence Consent</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p>As a moderator, you can enable automatic session saving to your browser's local storage.</p>
+                        <p><strong>Data stored locally includes:</strong></p>
+                        <ul>
+                            <li>Retrospective cards and groups</li>
+                            <li>Votes and action items</li>
+                            <li>Participant information (names and roles)</li>
+                            <li>Session metadata (timestamps, phase)</li>
+                        </ul>
+                        <p><strong>Privacy Notice:</strong></p>
+                        <ul>
+                            <li>Data is stored only in your browser</li>
+                            <li>No data is sent to external servers</li>
+                            <li>You can clear stored data at any time</li>
+                            <li>Data expires after the retention period (default: 30 days)</li>
+                        </ul>
+                        <div class="consent-checkbox-container">
+                            <label>
+                                <input type="checkbox" id="consent-checkbox">
+                                <span>I understand and consent to automatic session saving</span>
+                            </label>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="accept-consent-btn" class="btn btn-primary" disabled>Accept</button>
+                            <button id="decline-consent-btn" class="btn btn-secondary">Decline</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debug Modal -->
+            <div id="debug-modal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Debug Information</h3>
+                        <button class="modal-close" id="close-debug-modal">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <h4>Connection State</h4>
+                        <pre id="debug-connection-info"></pre>
+                        <h4>Network Dump</h4>
+                        <pre id="debug-network-dump"></pre>
+                        <button id="copy-network-btn" class="btn btn-small btn-primary">📋 Copy Network Dump</button>
+                    </div>
                 </div>
             </div>
 

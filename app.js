@@ -77,6 +77,170 @@ function canNavigate() {
     return state.myRole === 'moderator';
 }
 
+// ============================================================================
+// Session Persistence & Storage
+// ============================================================================
+
+const STORAGE_KEYS = {
+    SESSIONS: 'retronium.sessions',
+    PERSISTENCE_META: 'retronium.persistence'
+};
+
+let autosaveDebounceTimer = null;
+let networkLog = [];
+
+// Get persistence metadata
+function getPersistenceMeta() {
+    try {
+        const meta = localStorage.getItem(STORAGE_KEYS.PERSISTENCE_META);
+        return meta ? JSON.parse(meta) : {
+            officialEnabled: false,
+            consent: { accepted: false, timestamp: null },
+            retentionDays: 30,
+            useIndexedDB: false
+        };
+    } catch (e) {
+        console.error('Error reading persistence metadata:', e);
+        return {
+            officialEnabled: false,
+            consent: { accepted: false, timestamp: null },
+            retentionDays: 30,
+            useIndexedDB: false
+        };
+    }
+}
+
+// Save persistence metadata
+function savePersistenceMeta(meta) {
+    try {
+        localStorage.setItem(STORAGE_KEYS.PERSISTENCE_META, JSON.stringify(meta));
+    } catch (e) {
+        console.error('Error saving persistence metadata:', e);
+        handleStorageQuotaError();
+    }
+}
+
+// List all saved sessions
+function listLocalSessions() {
+    try {
+        const sessions = localStorage.getItem(STORAGE_KEYS.SESSIONS);
+        return sessions ? JSON.parse(sessions) : [];
+    } catch (e) {
+        console.error('Error reading sessions:', e);
+        return [];
+    }
+}
+
+// Save a session snapshot
+function saveSessionLocal(snapshot) {
+    try {
+        const sessions = listLocalSessions();
+        sessions.push(snapshot);
+        localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
+        return true;
+    } catch (e) {
+        console.error('Error saving session:', e);
+        handleStorageQuotaError();
+        return false;
+    }
+}
+
+// Delete a session by ID
+function deleteLocalSession(sessionId) {
+    try {
+        const sessions = listLocalSessions();
+        const filtered = sessions.filter(s => s.id !== sessionId);
+        localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(filtered));
+        return true;
+    } catch (e) {
+        console.error('Error deleting session:', e);
+        return false;
+    }
+}
+
+// Clear all sessions
+function clearAllLocalSessions() {
+    try {
+        localStorage.removeItem(STORAGE_KEYS.SESSIONS);
+        localStorage.removeItem(STORAGE_KEYS.PERSISTENCE_META);
+        return true;
+    } catch (e) {
+        console.error('Error clearing sessions:', e);
+        return false;
+    }
+}
+
+// Build a session snapshot from current state
+function buildSessionSnapshot(isOfficial = false) {
+    return {
+        id: generateId('snapshot'),
+        createdAt: new Date().toISOString(),
+        savedBy: state.username,
+        isOfficial: isOfficial,
+        hostPeerId: state.myPeerId,
+        summary: {
+            phase: state.currentPhase,
+            cardsCount: state.cards.length,
+            groupsCount: state.groups.length,
+            actionsCount: state.actionItems.length,
+            participantsCount: state.participants.length
+        },
+        state: {
+            currentPhase: state.currentPhase,
+            cards: state.cards,
+            groups: state.groups,
+            votes: state.votes,
+            actionItems: state.actionItems,
+            participants: state.participants
+        }
+    };
+}
+
+// Auto-save functionality
+function markDirtyAndAutoSave() {
+    if (autosaveDebounceTimer) {
+        clearTimeout(autosaveDebounceTimer);
+    }
+    autosaveDebounceTimer = setTimeout(() => {
+        autoSaveIfAllowed();
+    }, 1500); // 1.5 second debounce
+}
+
+function autoSaveIfAllowed() {
+    const meta = getPersistenceMeta();
+    if (meta.officialEnabled && meta.consent.accepted && canModerate()) {
+        const snapshot = buildSessionSnapshot(true);
+        if (saveSessionLocal(snapshot)) {
+            console.log('Auto-saved session at', new Date().toISOString());
+        }
+    }
+}
+
+// Filter sessions by retention days
+function filterSessionsByRetention(sessions, retentionDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    return sessions.filter(s => new Date(s.createdAt) >= cutoffDate);
+}
+
+// Handle storage quota errors
+function handleStorageQuotaError() {
+    alert('Storage quota exceeded. Please export and delete old sessions, or enable IndexedDB migration.');
+}
+
+// Network logging for debug
+function logNetworkEvent(event, data) {
+    networkLog.push({
+        timestamp: new Date().toISOString(),
+        event: event,
+        data: data
+    });
+    // Keep only last 100 events
+    if (networkLog.length > 100) {
+        networkLog.shift();
+    }
+}
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
@@ -111,6 +275,30 @@ function initializeEventListeners() {
     });
     document.getElementById('import-file-input').addEventListener('change', importSession);
     document.getElementById('close-role-modal').addEventListener('click', closeRoleModal);
+    
+    // Persistence controls
+    document.getElementById('persist-toggle').addEventListener('change', handlePersistToggle);
+    document.getElementById('open-sessions-btn').addEventListener('click', openSessionsModal);
+    document.getElementById('debug-btn').addEventListener('click', openDebugModal);
+    
+    // Sessions modal
+    document.getElementById('close-sessions-modal').addEventListener('click', closeSessionsModal);
+    document.getElementById('save-snapshot-btn').addEventListener('click', saveManualSnapshot);
+    document.getElementById('new-session-btn').addEventListener('click', handleNewSession);
+    document.getElementById('export-all-btn').addEventListener('click', exportAllSessions);
+    document.getElementById('clear-sessions-btn').addEventListener('click', clearAllSessions);
+    document.getElementById('retention-days').addEventListener('change', handleRetentionChange);
+    
+    // Consent modal
+    document.getElementById('consent-checkbox').addEventListener('change', (e) => {
+        document.getElementById('accept-consent-btn').disabled = !e.target.checked;
+    });
+    document.getElementById('accept-consent-btn').addEventListener('click', acceptConsent);
+    document.getElementById('decline-consent-btn').addEventListener('click', declineConsent);
+    
+    // Debug modal
+    document.getElementById('close-debug-modal').addEventListener('click', closeDebugModal);
+    document.getElementById('copy-network-btn').addEventListener('click', copyNetworkDump);
     
     // Close modals and dropdowns when clicking outside
     document.addEventListener('click', (e) => {
@@ -150,6 +338,30 @@ function initializeEventListeners() {
     // Phase 5: Action Items
     document.getElementById('add-action-btn').addEventListener('click', addActionItem);
     document.getElementById('export-btn').addEventListener('click', exportSummary);
+    
+    // Modal click-outside to close
+    document.getElementById('sessions-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'sessions-modal') {
+            closeSessionsModal();
+        }
+    });
+    
+    document.getElementById('debug-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'debug-modal') {
+            closeDebugModal();
+        }
+    });
+    
+    document.getElementById('persistence-consent-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'persistence-consent-modal') {
+            declineConsent();
+        }
+    });
+    
+    // Initialize persistence toggle state
+    const meta = getPersistenceMeta();
+    document.getElementById('persist-toggle').checked = meta.officialEnabled && meta.consent.accepted;
+    document.getElementById('retention-days').value = meta.retentionDays || 30;
 }
 
 // Connection Management
@@ -359,6 +571,339 @@ function changeUserRole(peerId, newRole) {
     }
 }
 
+// ============================================================================
+// Persistence Modal Handlers
+// ============================================================================
+
+function handlePersistToggle(e) {
+    const enabled = e.target.checked;
+    
+    if (!canModerate()) {
+        e.target.checked = false;
+        alert('Only moderators can enable persistence');
+        return;
+    }
+    
+    if (enabled) {
+        // Show consent modal
+        document.getElementById('persistence-consent-modal').classList.remove('hidden');
+    } else {
+        // Disable persistence
+        const meta = getPersistenceMeta();
+        meta.officialEnabled = false;
+        savePersistenceMeta(meta);
+    }
+}
+
+function acceptConsent() {
+    const checkbox = document.getElementById('consent-checkbox');
+    if (!checkbox.checked) {
+        return;
+    }
+    
+    const meta = getPersistenceMeta();
+    meta.officialEnabled = true;
+    meta.consent = {
+        accepted: true,
+        timestamp: new Date().toISOString()
+    };
+    savePersistenceMeta(meta);
+    
+    document.getElementById('persistence-consent-modal').classList.add('hidden');
+    document.getElementById('persist-toggle').checked = true;
+    
+    alert('Auto-save enabled. Sessions will be saved automatically.');
+}
+
+function declineConsent() {
+    document.getElementById('persistence-consent-modal').classList.add('hidden');
+    document.getElementById('persist-toggle').checked = false;
+    
+    const meta = getPersistenceMeta();
+    meta.officialEnabled = false;
+    savePersistenceMeta(meta);
+}
+
+function openSessionsModal() {
+    document.getElementById('sessions-modal').classList.remove('hidden');
+    renderSessionsList();
+}
+
+function closeSessionsModal() {
+    document.getElementById('sessions-modal').classList.add('hidden');
+}
+
+function renderSessionsList() {
+    const list = document.getElementById('sessions-list');
+    const meta = getPersistenceMeta();
+    const retentionDays = meta.retentionDays || 30;
+    
+    let sessions = listLocalSessions();
+    sessions = filterSessionsByRetention(sessions, retentionDays);
+    
+    // Sort by date, newest first
+    sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    if (sessions.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><p>No saved sessions</p></div>';
+        return;
+    }
+    
+    list.innerHTML = '';
+    sessions.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'session-item' + (session.isOfficial ? ' official' : '');
+        
+        const header = document.createElement('div');
+        header.className = 'session-item-header';
+        
+        const title = document.createElement('div');
+        title.className = 'session-item-title';
+        title.textContent = `Session ${new Date(session.createdAt).toLocaleString()}`;
+        if (session.isOfficial) {
+            title.textContent += ' ⭐';
+        }
+        header.appendChild(title);
+        
+        const meta = document.createElement('div');
+        meta.className = 'session-item-meta';
+        meta.innerHTML = `
+            Saved by: ${session.savedBy} | 
+            Phase: ${session.summary.phase} | 
+            Cards: ${session.summary.cardsCount} | 
+            Groups: ${session.summary.groupsCount} | 
+            Actions: ${session.summary.actionsCount}
+        `;
+        
+        const actions = document.createElement('div');
+        actions.className = 'session-item-actions';
+        
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn btn-small btn-primary';
+        restoreBtn.textContent = '📥 Restore';
+        restoreBtn.onclick = () => restoreSession(session);
+        
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'btn btn-small btn-secondary';
+        exportBtn.textContent = '📤 Export';
+        exportBtn.onclick = () => exportSingleSession(session);
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-small btn-danger';
+        deleteBtn.textContent = '🗑️ Delete';
+        deleteBtn.onclick = () => deleteSession(session.id);
+        
+        actions.appendChild(restoreBtn);
+        actions.appendChild(exportBtn);
+        actions.appendChild(deleteBtn);
+        
+        item.appendChild(header);
+        item.appendChild(meta);
+        item.appendChild(actions);
+        
+        list.appendChild(item);
+    });
+}
+
+function saveManualSnapshot() {
+    const snapshot = buildSessionSnapshot(false);
+    if (saveSessionLocal(snapshot)) {
+        alert('Session saved successfully!');
+        renderSessionsList();
+    } else {
+        alert('Failed to save session. Storage may be full.');
+    }
+}
+
+function restoreSession(session) {
+    if (!confirm('This will replace the current session. Continue?')) {
+        return;
+    }
+    
+    // Restore state
+    state.currentPhase = session.state.currentPhase;
+    state.cards = session.state.cards || [];
+    state.groups = session.state.groups || [];
+    state.votes = session.state.votes || {};
+    state.actionItems = session.state.actionItems || [];
+    state.participants = session.state.participants || [];
+    
+    updateAllDisplays();
+    
+    // If moderator, offer to broadcast
+    if (canModerate() && state.connections.length > 0) {
+        if (confirm('Broadcast restored session to all connected peers?')) {
+            broadcastState();
+        }
+    }
+    
+    closeSessionsModal();
+    alert('Session restored successfully!');
+}
+
+function exportSingleSession(session) {
+    const dataStr = JSON.stringify(session, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `retronium-session-${new Date(session.createdAt).toISOString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function exportAllSessions() {
+    const sessions = listLocalSessions();
+    if (sessions.length === 0) {
+        alert('No sessions to export');
+        return;
+    }
+    
+    const dataStr = JSON.stringify(sessions, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `retronium-all-sessions-${new Date().toISOString()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    alert(`Exported ${sessions.length} session(s)`);
+}
+
+function clearAllSessions() {
+    const sessions = listLocalSessions();
+    if (sessions.length === 0) {
+        alert('No sessions to clear');
+        return;
+    }
+    
+    if (!confirm(`This will delete all ${sessions.length} saved session(s). Export them first?`)) {
+        return;
+    }
+    
+    // Offer to export first
+    const shouldExport = confirm('Export all sessions before clearing?');
+    if (shouldExport) {
+        exportAllSessions();
+    }
+    
+    if (clearAllLocalSessions()) {
+        alert('All sessions cleared');
+        renderSessionsList();
+    } else {
+        alert('Failed to clear sessions');
+    }
+}
+
+function deleteSession(sessionId) {
+    if (!confirm('Delete this session?')) {
+        return;
+    }
+    
+    if (deleteLocalSession(sessionId)) {
+        renderSessionsList();
+    } else {
+        alert('Failed to delete session');
+    }
+}
+
+function handleRetentionChange(e) {
+    const days = parseInt(e.target.value);
+    if (days < 1 || days > 365) {
+        alert('Retention must be between 1 and 365 days');
+        e.target.value = 30;
+        return;
+    }
+    
+    const meta = getPersistenceMeta();
+    meta.retentionDays = days;
+    savePersistenceMeta(meta);
+    
+    // Re-render to apply new retention filter
+    renderSessionsList();
+}
+
+function handleNewSession() {
+    if (canModerate() && state.connections.length > 0) {
+        if (confirm('Create new session and reset all peers?')) {
+            // Broadcast new session message
+            broadcastMessage({ type: 'new_session' });
+            resetSession();
+        }
+    } else {
+        if (confirm('Create new local session? This will reset your current session.')) {
+            resetSession();
+        }
+    }
+}
+
+function resetSession() {
+    state.cards = [];
+    state.groups = [];
+    state.votes = {};
+    state.actionItems = [];
+    state.currentPhase = 1;
+    state.myVotesRemaining = 3;
+    
+    updateAllDisplays();
+    alert('New session created');
+}
+
+// Debug Modal
+function openDebugModal() {
+    document.getElementById('debug-modal').classList.remove('hidden');
+    updateDebugInfo();
+}
+
+function closeDebugModal() {
+    document.getElementById('debug-modal').classList.add('hidden');
+}
+
+function updateDebugInfo() {
+    const connectionInfo = {
+        myPeerId: state.myPeerId,
+        isHost: state.isHost,
+        myRole: state.myRole,
+        connectionsCount: state.connections.length,
+        participantsCount: state.participants.length,
+        peerOpen: state.peer ? state.peer.open : false,
+        peerDisconnected: state.peer ? state.peer.disconnected : true
+    };
+    
+    document.getElementById('debug-connection-info').textContent = JSON.stringify(connectionInfo, null, 2);
+    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog, null, 2);
+}
+
+function copyNetworkDump() {
+    const dump = {
+        connection: {
+            myPeerId: state.myPeerId,
+            isHost: state.isHost,
+            myRole: state.myRole,
+            connectionsCount: state.connections.length,
+            participantsCount: state.participants.length
+        },
+        networkLog: networkLog,
+        timestamp: new Date().toISOString()
+    };
+    
+    const dumpStr = JSON.stringify(dump, null, 2);
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(dumpStr).then(() => {
+            alert('Network dump copied to clipboard');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy. Check console for dump.');
+            console.log(dumpStr);
+        });
+    } else {
+        alert('Clipboard not available. Check console for dump.');
+        console.log(dumpStr);
+    }
+}
+
 // Session Export/Import
 function exportSession() {
     // Warn user about exporting decrypted data
@@ -444,6 +989,8 @@ function setupConnection(conn) {
     state.connections.push(conn);
     
     conn.on('open', () => {
+        logNetworkEvent('connection_open', { peer: conn.peer });
+        
         // Send introduction
         conn.send({
             type: 'join',
@@ -469,10 +1016,12 @@ function setupConnection(conn) {
     });
     
     conn.on('data', (data) => {
+        logNetworkEvent('data_received', { type: data.type, from: conn.peer });
         handleMessage(data, conn);
     });
     
     conn.on('close', () => {
+        logNetworkEvent('connection_close', { peer: conn.peer });
         const index = state.connections.indexOf(conn);
         if (index > -1) {
             state.connections.splice(index, 1);
@@ -481,6 +1030,7 @@ function setupConnection(conn) {
     });
     
     conn.on('error', (err) => {
+        logNetworkEvent('connection_error', { peer: conn.peer, error: err.toString() });
         console.error('Connection error:', err);
         // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
@@ -610,6 +1160,12 @@ function handleMessage(data, conn) {
                 renderVotingPhase();
             } else if (data.phase === 4) {
                 renderDiscussionPhase();
+            }
+            break;
+        
+        case 'new_session':
+            if (confirm('The moderator has started a new session. Reset your local session?')) {
+                resetSession();
             }
             break;
     }
@@ -789,6 +1345,8 @@ function changePhase(phase) {
     } else if (phase === 4) {
         renderDiscussionPhase();
     }
+    
+    markDirtyAndAutoSave();
 }
 
 function updatePhaseDisplay() {
@@ -860,6 +1418,9 @@ function addCard() {
     
     // Clear input
     textInput.value = '';
+    
+    // Trigger autosave
+    markDirtyAndAutoSave();
 }
 
 function deleteCard(cardId) {
@@ -870,6 +1431,9 @@ function deleteCard(cardId) {
         type: 'card_deleted',
         cardId: cardId
     });
+    
+    // Trigger autosave
+    markDirtyAndAutoSave();
 }
 
 function renderCards() {
@@ -1063,6 +1627,8 @@ function createNewGroup() {
         type: 'group_created',
         group: group
     });
+    
+    markDirtyAndAutoSave();
 }
 
 function addCardToGroup(cardId, groupId) {
@@ -1081,6 +1647,8 @@ function addCardToGroup(cardId, groupId) {
             type: 'group_updated',
             group: group
         });
+        
+        markDirtyAndAutoSave();
     }
 }
 
@@ -1089,6 +1657,7 @@ function removeCardFromGroups(cardId) {
         g.cardIds = g.cardIds.filter(id => id !== cardId);
     });
     renderGroupingPhase();
+    markDirtyAndAutoSave();
 }
 
 function updateGroupName(groupId, newName) {
@@ -1100,6 +1669,8 @@ function updateGroupName(groupId, newName) {
             type: 'group_updated',
             group: group
         });
+        
+        markDirtyAndAutoSave();
     }
 }
 
@@ -1194,6 +1765,8 @@ function voteForGroup(groupId) {
         groupId: groupId,
         username: state.username
     });
+    
+    markDirtyAndAutoSave();
 }
 
 // Phase 4: Discussion
@@ -1290,6 +1863,8 @@ function addActionItem() {
     
     textInput.value = '';
     ownerInput.value = '';
+    
+    markDirtyAndAutoSave();
 }
 
 function toggleActionItem(actionId) {
@@ -1302,6 +1877,8 @@ function toggleActionItem(actionId) {
             type: 'action_updated',
             action: action
         });
+        
+        markDirtyAndAutoSave();
     }
 }
 
