@@ -70,6 +70,37 @@ body {
     font-family: monospace;
 }
 
+.share-controls {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.qr-code-container {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: white;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}
+
+#qr-code {
+    display: inline-block;
+    margin-bottom: 10px;
+}
+
+#qr-code img {
+    max-width: 100%;
+    height: auto;
+}
+
+.qr-instructions {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
 .participants {
     flex: 1;
     margin-bottom: 20px;

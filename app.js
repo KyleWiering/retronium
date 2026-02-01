@@ -81,6 +81,16 @@ function canNavigate() {
 document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     updatePhaseDisplay();
+    
+    // Check if URL contains session parameter for auto-join
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionParam = urlParams.get('session');
+    if (sessionParam) {
+        // Pre-fill the session ID input
+        document.getElementById('peer-id-input').value = sessionParam;
+        // Optionally auto-join (commented out for now to avoid auto-connecting without user intent)
+        // setTimeout(() => joinSession(), 500);
+    }
 });
 
 // Event Listeners
@@ -89,6 +99,8 @@ function initializeEventListeners() {
     document.getElementById('host-btn').addEventListener('click', hostSession);
     document.getElementById('join-btn').addEventListener('click', joinSession);
     document.getElementById('copy-btn').addEventListener('click', copySessionId);
+    document.getElementById('copy-link-btn').addEventListener('click', copySessionLink);
+    document.getElementById('show-qr-btn').addEventListener('click', toggleQRCode);
     
     // Settings menu
     document.getElementById('settings-btn').addEventListener('click', toggleSettingsMenu);
@@ -484,18 +496,29 @@ function handleMessage(data, conn) {
         case 'join':
             if (state.isHost) {
                 addParticipant(data.username, data.peerId, data.role || 'participant', false);
-                // Broadcast new participant to all
+                // Broadcast new participant to all existing peers
                 broadcastMessage({
                     type: 'participant_added',
                     username: data.username,
                     peerId: data.peerId,
                     role: data.role || 'participant'
                 });
+                // Also broadcast updated full participant list to ensure sync
+                broadcastMessage({
+                    type: 'participants_sync',
+                    participants: state.participants
+                });
             }
             break;
         
         case 'participant_added':
             addParticipant(data.username, data.peerId, data.role || 'participant', false);
+            break;
+        
+        case 'participants_sync':
+            // Full participant list sync to ensure all peers have consistent view
+            state.participants = data.participants || [];
+            updateParticipantsList();
             break;
         
         case 'role_changed':
@@ -687,6 +710,63 @@ function copySessionId() {
         } catch (e) {
             alert('Failed to copy. Please copy manually.');
         }
+    }
+}
+
+function copySessionLink() {
+    const sessionId = document.getElementById('session-id').value;
+    const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${sessionId}`;
+    const btn = document.getElementById('copy-link-btn');
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sessionUrl)
+            .then(() => {
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = '📋 Copy Link';
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy link:', err);
+                alert('Failed to copy. Please copy manually:\n' + sessionUrl);
+            });
+    } else {
+        alert('Link:\n' + sessionUrl);
+    }
+}
+
+let qrCodeInstance = null;
+
+function toggleQRCode() {
+    const qrContainer = document.getElementById('qr-code-container');
+    const qrCodeDiv = document.getElementById('qr-code');
+    const btn = document.getElementById('show-qr-btn');
+    
+    if (qrContainer.classList.contains('hidden')) {
+        // Show QR code
+        const sessionId = document.getElementById('session-id').value;
+        const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${sessionId}`;
+        
+        // Clear previous QR code
+        qrCodeDiv.innerHTML = '';
+        
+        // Generate QR code using API (fallback approach that works without external libraries)
+        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(sessionUrl)}`;
+        const img = document.createElement('img');
+        img.src = qrApiUrl;
+        img.alt = 'Session QR Code';
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        qrCodeDiv.appendChild(img);
+        
+        qrContainer.classList.remove('hidden');
+        btn.textContent = '✕ Hide QR';
+    } else {
+        // Hide QR code
+        qrContainer.classList.add('hidden');
+        btn.textContent = '📱 Show QR Code';
+        qrCodeDiv.innerHTML = '';
+        qrCodeInstance = null;
     }
 }
 

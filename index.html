@@ -20,6 +20,14 @@
                             <input type="text" id="session-id" readonly>
                             <button id="copy-btn" class="btn btn-small">Copy</button>
                         </div>
+                        <div class="share-controls">
+                            <button id="copy-link-btn" class="btn btn-small btn-secondary">📋 Copy Link</button>
+                            <button id="show-qr-btn" class="btn btn-small btn-secondary">📱 Show QR Code</button>
+                        </div>
+                        <div id="qr-code-container" class="qr-code-container hidden">
+                            <div id="qr-code"></div>
+                            <p class="qr-instructions">Scan to join session on mobile</p>
+                        </div>
                     </div>
                 </div>
                 <div id="join-section">
