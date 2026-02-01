@@ -70,6 +70,37 @@ body {
     font-family: monospace;
 }
 
+.share-controls {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.qr-code-container {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: white;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}
+
+#qr-code {
+    display: inline-block;
+    margin-bottom: 10px;
+}
+
+#qr-code img {
+    max-width: 100%;
+    height: auto;
+}
+
+.qr-instructions {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
 .participants {
     flex: 1;
     margin-bottom: 20px;
@@ -793,4 +824,154 @@ textarea {
     .voting-area {
         grid-template-columns: 1fr;
     }
+}
+
+/* Persistence Controls */
+.persist-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.persist-toggle-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+/* Sessions Modal */
+.modal-large {
+    max-width: 800px;
+}
+
+.sessions-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.retention-control {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: var(--bg-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.retention-control label {
+    font-weight: 500;
+}
+
+.retention-control input {
+    width: 80px;
+}
+
+.sessions-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.session-item {
+    padding: 15px;
+    margin-bottom: 10px;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.session-item.official {
+    border-left-color: var(--success-color);
+}
+
+.session-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.session-item-title {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.session-item-meta {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+}
+
+.session-item-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.session-item-actions .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #c0392b;
+}
+
+/* Consent Modal */
+.consent-checkbox-container {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: var(--bg-color);
+    border-radius: 4px;
+}
+
+.consent-checkbox-container label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.consent-checkbox-container input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Debug Modal */
+#debug-connection-info,
+#debug-network-dump {
+    background-color: var(--bg-color);
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-light);
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
 }

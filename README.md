@@ -136,6 +136,43 @@ Every merge to main triggers:
 - Release notes containing the PR title, description, and author
 - A link to the full changelog between versions
 
+## New Features
+
+### QR Code & Easy Mobile Joining
+
+- **QR Code Generation**: When hosting a session, click "Show QR Code" to display a scannable QR code for mobile devices
+- **Copy Link**: Share the full session URL with one click using the "Copy Link" button
+- **Auto-Join**: When someone clicks a shared link, the session ID is automatically pre-filled
+
+### Session Persistence (GDPR Compliant)
+
+- **Auto-Save**: Moderators can enable automatic session saving with explicit consent
+- **Session History**: View, restore, export, or delete previously saved sessions
+- **Retention Control**: Set how long sessions are kept (default: 30 days)
+- **Privacy First**: All data is stored locally in your browser, never sent to external servers
+
+### Debug Tools
+
+- **Network Logging**: Track connection events and troubleshoot WebRTC issues
+- **Debug Modal**: View connection state and export network dumps for diagnostics
+
+### Quick Local Testing
+
+To test WebRTC locally, you'll need two browser instances:
+
+1. Start a local server:
+```bash
+python3 -m http.server 8080
+```
+
+2. Open two browser windows/tabs:
+   - Window 1: `http://localhost:8080/` - Click "Host Session"
+   - Window 2: `http://localhost:8080/` - Copy the session ID from Window 1 and join
+
+**Note**: For testing across different devices on the same network, replace `localhost` with your machine's local IP address (e.g., `http://192.168.1.100:8080/`).
+
+**TURN/STUN Notes**: The app uses Google's public STUN servers for NAT traversal. For production use with restrictive firewalls, consider setting up your own TURN server.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
