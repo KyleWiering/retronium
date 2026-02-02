@@ -171,7 +171,22 @@ python3 -m http.server 8080
 
 **Note**: For testing across different devices on the same network, replace `localhost` with your machine's local IP address (e.g., `http://192.168.1.100:8080/`).
 
-**TURN/STUN Notes**: The app uses Google's public STUN servers for NAT traversal. For production use with restrictive firewalls, consider setting up your own TURN server.
+### WebRTC Connection Configuration
+
+The app uses both STUN and TURN servers for reliable peer-to-peer connections:
+
+- **STUN Servers**: Google's public STUN servers help establish direct connections through simple NAT configurations
+- **TURN Servers**: Public TURN relay servers (openrelay.metered.ca) provide fallback for restrictive networks, mobile connections, and symmetric NAT scenarios
+
+This configuration enables connections between:
+- Desktop to Desktop
+- Desktop to Mobile (iPhone, Android)
+- Mobile to Mobile
+
+**Note for Production**: The app currently uses public TURN servers which are suitable for testing and moderate usage. For production deployments with high traffic or strict security requirements, consider:
+- Setting up your own TURN server (e.g., using [coturn](https://github.com/coturn/coturn))
+- Using a commercial WebRTC infrastructure provider
+- Monitoring TURN server usage to ensure reliability
 
 ## Contributing
 
