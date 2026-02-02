@@ -231,15 +231,51 @@ function handleStorageQuotaError() {
 
 // Network logging for debug
 function logNetworkEvent(event, data) {
-    networkLog.push({
+    const logEntry = {
         timestamp: new Date().toISOString(),
+        sequence: networkLog.length + 1,
         event: event,
         data: data
-    });
-    // Keep only last 100 events
-    if (networkLog.length > 100) {
+    };
+    networkLog.push(logEntry);
+    
+    // Also log to console for real-time debugging
+    console.log(`[${logEntry.sequence}] ${event}:`, data);
+    
+    // Keep only last 200 events (increased from 100 for better debugging)
+    if (networkLog.length > 200) {
         networkLog.shift();
     }
+}
+
+// Get browser and platform information for debugging
+function getBrowserInfo() {
+    const ua = navigator.userAgent;
+    let browserName = 'Unknown';
+    let browserVersion = 'Unknown';
+    let platform = navigator.platform || 'Unknown';
+    
+    if (ua.indexOf('Firefox') > -1) {
+        browserName = 'Firefox';
+        browserVersion = ua.match(/Firefox\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Chrome') > -1) {
+        browserName = 'Chrome';
+        browserVersion = ua.match(/Chrome\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Safari') > -1) {
+        browserName = 'Safari';
+        browserVersion = ua.match(/Version\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Edge') > -1 || ua.indexOf('Edg') > -1) {
+        browserName = 'Edge';
+        browserVersion = ua.match(/Edg\/([0-9.]+)/)?.[1] || 'Unknown';
+    }
+    
+    return {
+        browser: browserName,
+        version: browserVersion,
+        platform: platform,
+        isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua),
+        userAgent: ua
+    };
 }
 
 // Initialize the application
@@ -409,6 +445,14 @@ function hostSession() {
         state.username = username.trim();
     }
     
+    const browserInfo = getBrowserInfo();
+    logNetworkEvent('host_session_start', { 
+        username: state.username,
+        browserInfo: browserInfo,
+        peerConfig: PEER_CONFIG
+    });
+    console.log('Starting host session with browser:', browserInfo);
+    
     try {
         state.peer = new Peer(PEER_CONFIG);
         state.isHost = true;
@@ -421,12 +465,23 @@ function hostSession() {
             document.getElementById('host-btn').disabled = true;
             updateConnectionStatus(true);
             
+            logNetworkEvent('host_peer_open', { 
+                peerId: id,
+                browserInfo: browserInfo
+            });
+            console.log('Host peer opened with ID:', id);
+            
             addParticipant(state.username, state.myPeerId, 'moderator', true);
             updateModeratorControls();
             broadcastState();
         });
         
         state.peer.on('connection', (conn) => {
+            logNetworkEvent('incoming_connection', { 
+                peer: conn.peer,
+                connectionId: conn.connectionId 
+            });
+            console.log('Incoming connection from peer:', conn.peer);
             setupConnection(conn);
         });
         
@@ -444,12 +499,24 @@ function hostSession() {
             
             // Try to reconnect
             if (!state.peer.destroyed) {
+                console.log('Attempting to reconnect host peer...');
                 state.peer.reconnect();
             }
         });
         
         state.peer.on('error', (err) => {
-            console.error('Host peer error:', err);
+            const errorDetails = {
+                type: err.type,
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                isHost: true,
+                browserInfo: browserInfo
+            };
+            
+            logNetworkEvent('host_peer_error', errorDetails);
+            console.error('Host peer error:', errorDetails);
+            
             let errorMsg = 'Connection error: ' + err.type;
             if (err.type === 'network') {
                 errorMsg = 'Network error. Please check your internet connection and try again.';
@@ -458,11 +525,16 @@ function hostSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
-            alert(errorMsg);
+            alert(errorMsg + '\n\nDebug Info: ' + JSON.stringify(errorDetails, null, 2));
         });
     } catch (error) {
+        logNetworkEvent('host_session_exception', { 
+            error: error.toString(),
+            message: error.message,
+            stack: error.stack
+        });
         console.error('Failed to create peer:', error);
-        alert('Failed to start hosting. Please try again.');
+        alert('Failed to start hosting. Please try again.\n\nError: ' + error.message);
     }
 }
 
@@ -479,18 +551,44 @@ function joinSession() {
         state.username = username.trim();
     }
     
+    const browserInfo = getBrowserInfo();
+    logNetworkEvent('join_session_start', { 
+        targetPeerId: peerId,
+        username: state.username,
+        browserInfo: browserInfo,
+        peerConfig: PEER_CONFIG
+    });
+    console.log('Starting join session to peer:', peerId, 'with browser:', browserInfo);
+    
     try {
         state.peer = new Peer(PEER_CONFIG);
         state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
+            
+            logNetworkEvent('join_peer_open', { 
+                myPeerId: id,
+                targetPeerId: peerId,
+                browserInfo: browserInfo
+            });
+            console.log('Join peer opened with ID:', id, 'attempting to connect to:', peerId);
+            
             // Use JSON serialization for maximum browser compatibility, especially Safari/iOS
             // Safari doesn't reliably support binary serialization in PeerJS data channels
-            const conn = state.peer.connect(peerId, {
+            const connOptions = {
                 reliable: true,  // Use reliable data channel for better stability
                 serialization: 'json'  // Required for Safari/iOS compatibility
+            };
+            
+            logNetworkEvent('initiating_connection', { 
+                myPeerId: id,
+                targetPeerId: peerId,
+                options: connOptions
             });
+            console.log('Initiating connection with options:', connOptions);
+            
+            const conn = state.peer.connect(peerId, connOptions);
             setupConnection(conn);
             
             document.getElementById('join-btn').disabled = true;
@@ -504,12 +602,25 @@ function joinSession() {
             console.warn('Client peer disconnected from signaling server');
             // Try to reconnect if not destroyed
             if (!state.peer.destroyed) {
+                console.log('Attempting to reconnect client peer...');
                 state.peer.reconnect();
             }
         });
         
         state.peer.on('error', (err) => {
-            console.error('Join peer error:', err);
+            const errorDetails = {
+                type: err.type,
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                isHost: false,
+                targetPeerId: peerId,
+                browserInfo: browserInfo
+            };
+            
+            logNetworkEvent('join_peer_error', errorDetails);
+            console.error('Join peer error:', errorDetails);
+            
             let errorMsg = 'Connection error: ' + err.type;
             if (err.type === 'network') {
                 errorMsg = 'Network error. Please check your internet connection and try again.';
@@ -520,11 +631,17 @@ function joinSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
-            alert(errorMsg);
+            alert(errorMsg + '\n\nDebug Info:\n' + JSON.stringify(errorDetails, null, 2));
         });
     } catch (error) {
+        logNetworkEvent('join_session_exception', { 
+            error: error.toString(),
+            message: error.message,
+            stack: error.stack,
+            targetPeerId: peerId
+        });
         console.error('Failed to join session:', error);
-        alert('Failed to join session. Please check the session ID.');
+        alert('Failed to join session. Please check the session ID.\n\nError: ' + error.message);
     }
 }
 
@@ -906,31 +1023,88 @@ function closeDebugModal() {
 }
 
 function updateDebugInfo() {
+    const browserInfo = getBrowserInfo();
+    
     const connectionInfo = {
+        browserInfo: browserInfo,
         myPeerId: state.myPeerId,
         isHost: state.isHost,
         myRole: state.myRole,
         connectionsCount: state.connections.length,
         participantsCount: state.participants.length,
         peerOpen: state.peer ? state.peer.open : false,
-        peerDisconnected: state.peer ? state.peer.disconnected : true
+        peerDisconnected: state.peer ? state.peer.disconnected : true,
+        peerId: state.peer ? state.peer.id : null,
+        peerDestroyed: state.peer ? state.peer.destroyed : true
     };
     
+    // Add detailed connection info for each active connection
+    if (state.connections.length > 0) {
+        connectionInfo.activeConnections = state.connections.map(conn => {
+            const connInfo = {
+                peer: conn.peer,
+                open: conn.open,
+                connectionId: conn.connectionId,
+                reliable: conn.reliable,
+                serialization: conn.serialization
+            };
+            
+            // Add ICE connection state if available
+            if (conn.peerConnection) {
+                connInfo.iceConnectionState = conn.peerConnection.iceConnectionState;
+                connInfo.iceGatheringState = conn.peerConnection.iceGatheringState;
+                connInfo.signalingState = conn.peerConnection.signalingState;
+                connInfo.connectionState = conn.peerConnection.connectionState;
+            }
+            
+            return connInfo;
+        });
+    }
+    
+    // Add ICE server configuration
+    connectionInfo.iceServers = PEER_CONFIG.config.iceServers.map(server => ({
+        urls: server.urls,
+        hasCredentials: !!(server.username && server.credential)
+    }));
+    
     document.getElementById('debug-connection-info').textContent = JSON.stringify(connectionInfo, null, 2);
-    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog, null, 2);
+    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog.slice(-50), null, 2); // Show last 50 events
 }
 
 function copyNetworkDump() {
+    const browserInfo = getBrowserInfo();
+    
     const dump = {
+        timestamp: new Date().toISOString(),
+        browserInfo: browserInfo,
         connection: {
             myPeerId: state.myPeerId,
             isHost: state.isHost,
             myRole: state.myRole,
             connectionsCount: state.connections.length,
-            participantsCount: state.participants.length
+            participantsCount: state.participants.length,
+            peerOpen: state.peer ? state.peer.open : false,
+            peerDisconnected: state.peer ? state.peer.disconnected : true
         },
-        networkLog: networkLog,
-        timestamp: new Date().toISOString()
+        activeConnections: state.connections.map(conn => {
+            const connInfo = {
+                peer: conn.peer,
+                open: conn.open,
+                connectionId: conn.connectionId
+            };
+            if (conn.peerConnection) {
+                connInfo.iceConnectionState = conn.peerConnection.iceConnectionState;
+                connInfo.iceGatheringState = conn.peerConnection.iceGatheringState;
+                connInfo.signalingState = conn.peerConnection.signalingState;
+                connInfo.connectionState = conn.peerConnection.connectionState;
+            }
+            return connInfo;
+        }),
+        iceServers: PEER_CONFIG.config.iceServers.map(server => ({
+            urls: server.urls,
+            hasCredentials: !!(server.username && server.credential)
+        })),
+        networkLog: networkLog
     };
     
     const dumpStr = JSON.stringify(dump, null, 2);
@@ -1034,17 +1208,122 @@ function setupConnection(conn) {
     let connectionTimeout;
     let isConnectionOpen = false;
     
+    logNetworkEvent('connection_setup_start', { 
+        peer: conn.peer, 
+        connectionId: conn.connectionId,
+        metadata: conn.metadata,
+        reliable: conn.reliable,
+        serialization: conn.serialization
+    });
+    
+    // Monitor ICE connection state if available
+    if (conn.peerConnection) {
+        const pc = conn.peerConnection;
+        
+        // Log initial connection state
+        logNetworkEvent('ice_connection_state', {
+            peer: conn.peer,
+            state: pc.iceConnectionState,
+            gatheringState: pc.iceGatheringState,
+            signalingState: pc.signalingState
+        });
+        
+        // Monitor ICE connection state changes
+        pc.addEventListener('iceconnectionstatechange', () => {
+            logNetworkEvent('ice_connection_state_change', {
+                peer: conn.peer,
+                state: pc.iceConnectionState,
+                gatheringState: pc.iceGatheringState,
+                signalingState: pc.signalingState
+            });
+            console.log(`ICE Connection State for ${conn.peer}:`, pc.iceConnectionState);
+            
+            // Log detailed state when connection fails
+            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+                logNetworkEvent('ice_connection_failed_details', {
+                    peer: conn.peer,
+                    iceConnectionState: pc.iceConnectionState,
+                    iceGatheringState: pc.iceGatheringState,
+                    signalingState: pc.signalingState,
+                    connectionState: pc.connectionState
+                });
+            }
+        });
+        
+        // Monitor ICE gathering state changes
+        pc.addEventListener('icegatheringstatechange', () => {
+            logNetworkEvent('ice_gathering_state_change', {
+                peer: conn.peer,
+                gatheringState: pc.iceGatheringState
+            });
+            console.log(`ICE Gathering State for ${conn.peer}:`, pc.iceGatheringState);
+        });
+        
+        // Monitor ICE candidates
+        pc.addEventListener('icecandidate', (event) => {
+            if (event.candidate) {
+                logNetworkEvent('ice_candidate', {
+                    peer: conn.peer,
+                    candidate: event.candidate.candidate,
+                    type: event.candidate.type,
+                    protocol: event.candidate.protocol,
+                    address: event.candidate.address,
+                    port: event.candidate.port
+                });
+                console.log(`ICE Candidate for ${conn.peer}:`, event.candidate.type, event.candidate.protocol);
+            } else {
+                logNetworkEvent('ice_candidate_gathering_complete', { peer: conn.peer });
+                console.log(`ICE Candidate gathering complete for ${conn.peer}`);
+            }
+        });
+        
+        // Monitor signaling state changes
+        pc.addEventListener('signalingstatechange', () => {
+            logNetworkEvent('signaling_state_change', {
+                peer: conn.peer,
+                state: pc.signalingState
+            });
+            console.log(`Signaling State for ${conn.peer}:`, pc.signalingState);
+        });
+        
+        // Monitor connection state changes (newer API)
+        if (pc.connectionState !== undefined) {
+            pc.addEventListener('connectionstatechange', () => {
+                logNetworkEvent('connection_state_change', {
+                    peer: conn.peer,
+                    state: pc.connectionState
+                });
+                console.log(`Connection State for ${conn.peer}:`, pc.connectionState);
+            });
+        }
+    } else {
+        logNetworkEvent('no_peer_connection', { 
+            peer: conn.peer,
+            message: 'RTCPeerConnection not accessible for detailed monitoring'
+        });
+    }
+    
     // Set a timeout for connection establishment (30 seconds)
     connectionTimeout = setTimeout(() => {
         if (!isConnectionOpen) {
-            logNetworkEvent('connection_timeout', { peer: conn.peer });
-            console.warn('Connection timeout for peer:', conn.peer);
+            const debugInfo = conn.peerConnection ? {
+                iceConnectionState: conn.peerConnection.iceConnectionState,
+                iceGatheringState: conn.peerConnection.iceGatheringState,
+                signalingState: conn.peerConnection.signalingState,
+                connectionState: conn.peerConnection.connectionState
+            } : { message: 'No peer connection details available' };
+            
+            logNetworkEvent('connection_timeout', { 
+                peer: conn.peer,
+                debugInfo: debugInfo
+            });
+            console.warn('Connection timeout for peer:', conn.peer, 'Debug info:', debugInfo);
             conn.close();
             // Update status for clients
             if (!state.isHost) {
                 updateConnectionStatus(false);
                 document.getElementById('join-btn').disabled = false;
-                alert('Connection timeout. Please check the session ID and try again.');
+                alert('Connection timeout. Please check the session ID and try again.\n\nDebug: ' + JSON.stringify(debugInfo, null, 2));
             }
         }
     }, 30000);
@@ -1055,7 +1334,13 @@ function setupConnection(conn) {
         
         // Only add to connections array after successfully opening
         state.connections.push(conn);
-        logNetworkEvent('connection_open', { peer: conn.peer });
+        logNetworkEvent('connection_open', { 
+            peer: conn.peer,
+            finalState: conn.peerConnection ? {
+                iceConnectionState: conn.peerConnection.iceConnectionState,
+                connectionState: conn.peerConnection.connectionState
+            } : 'unknown'
+        });
         
         // Update connection status after successfully opening
         updateConnectionStatus(true);
@@ -1110,8 +1395,26 @@ function setupConnection(conn) {
     
     conn.on('error', (err) => {
         clearTimeout(connectionTimeout);
-        logNetworkEvent('connection_error', { peer: conn.peer, error: err.toString() });
-        console.error('Connection error:', err);
+        
+        // Enhanced error logging with all available details
+        const errorDetails = {
+            peer: conn.peer,
+            errorMessage: err.message || 'Unknown error',
+            errorType: err.type || 'Unknown type',
+            errorString: err.toString(),
+            errorName: err.name,
+            errorStack: err.stack
+        };
+        
+        if (conn.peerConnection) {
+            errorDetails.iceConnectionState = conn.peerConnection.iceConnectionState;
+            errorDetails.iceGatheringState = conn.peerConnection.iceGatheringState;
+            errorDetails.signalingState = conn.peerConnection.signalingState;
+            errorDetails.connectionState = conn.peerConnection.connectionState;
+        }
+        
+        logNetworkEvent('connection_error', errorDetails);
+        console.error('Connection error details:', errorDetails);
         
         // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
@@ -1124,7 +1427,8 @@ function setupConnection(conn) {
         // Show error to user if this is the only/first connection attempt
         if (!state.isHost && state.connections.length === 0) {
             document.getElementById('join-btn').disabled = false;
-            alert('Failed to establish connection: ' + (err.message || err.type || 'Unknown error'));
+            const errorMsg = `Failed to establish connection: ${err.message || err.type || 'Unknown error'}\n\nDebug Info:\n${JSON.stringify(errorDetails, null, 2)}`;
+            alert(errorMsg);
         }
     });
 }
