@@ -1215,6 +1215,9 @@ function importSession(event) {
 function setupConnection(conn) {
     let connectionTimeout;
     let isConnectionOpen = false;
+    let iceRestartAttempted = false;
+    let iceGatheringTimeout = null;
+    let hasReceivedRelayCandidate = false;
     
     logNetworkEvent('connection_setup_start', { 
         peer: conn.peer, 
@@ -1253,8 +1256,34 @@ function setupConnection(conn) {
                     iceConnectionState: pc.iceConnectionState,
                     iceGatheringState: pc.iceGatheringState,
                     signalingState: pc.signalingState,
-                    connectionState: pc.connectionState
+                    connectionState: pc.connectionState,
+                    hasReceivedRelayCandidate: hasReceivedRelayCandidate
                 });
+                
+                // Attempt ICE restart if we haven't tried yet and connection failed
+                if (!iceRestartAttempted && pc.iceConnectionState === 'failed' && !isConnectionOpen) {
+                    iceRestartAttempted = true;
+                    logNetworkEvent('ice_restart_attempt', {
+                        peer: conn.peer,
+                        reason: 'ICE connection failed, attempting restart'
+                    });
+                    console.log(`Attempting ICE restart for ${conn.peer}`);
+                    
+                    // ICE restart by creating a new offer with iceRestart option
+                    pc.createOffer({ iceRestart: true })
+                        .then(offer => pc.setLocalDescription(offer))
+                        .then(() => {
+                            logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
+                            // Note: PeerJS handles the signaling automatically
+                        })
+                        .catch(err => {
+                            logNetworkEvent('ice_restart_failed', { 
+                                peer: conn.peer, 
+                                error: err.message 
+                            });
+                            console.error('ICE restart failed:', err);
+                        });
+                }
             }
         });
         
@@ -1265,22 +1294,60 @@ function setupConnection(conn) {
                 gatheringState: pc.iceGatheringState
             });
             console.log(`ICE Gathering State for ${conn.peer}:`, pc.iceGatheringState);
+            
+            // Clear gathering timeout when complete
+            if (pc.iceGatheringState === 'complete') {
+                if (iceGatheringTimeout) {
+                    clearTimeout(iceGatheringTimeout);
+                    iceGatheringTimeout = null;
+                }
+            }
+            
+            // Set timeout when gathering starts to detect stalled gathering
+            if (pc.iceGatheringState === 'gathering' && !iceGatheringTimeout) {
+                iceGatheringTimeout = setTimeout(() => {
+                    if (pc.iceGatheringState === 'gathering') {
+                        logNetworkEvent('ice_gathering_timeout', {
+                            peer: conn.peer,
+                            gatheringState: pc.iceGatheringState,
+                            hasReceivedRelayCandidate: hasReceivedRelayCandidate,
+                            iceConnectionState: pc.iceConnectionState
+                        });
+                        console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${pc.iceGatheringState}`);
+                    }
+                }, 10000); // 10 second timeout for gathering
+            }
         });
         
         // Monitor ICE candidates
         pc.addEventListener('icecandidate', (event) => {
             if (event.candidate) {
+                const candidateType = event.candidate.type;
+                
+                // Track if we received a relay (TURN) candidate
+                if (candidateType === 'relay') {
+                    hasReceivedRelayCandidate = true;
+                }
+                
                 logNetworkEvent('ice_candidate', {
                     peer: conn.peer,
                     candidate: event.candidate.candidate,
-                    type: event.candidate.type,
+                    type: candidateType,
                     protocol: event.candidate.protocol,
                     address: event.candidate.address,
                     port: event.candidate.port
                 });
-                console.log(`ICE Candidate for ${conn.peer}:`, event.candidate.type, event.candidate.protocol);
+                console.log(`ICE Candidate for ${conn.peer}:`, candidateType, event.candidate.protocol);
             } else {
-                logNetworkEvent('ice_candidate_gathering_complete', { peer: conn.peer });
+                // null candidate means gathering is complete
+                if (iceGatheringTimeout) {
+                    clearTimeout(iceGatheringTimeout);
+                    iceGatheringTimeout = null;
+                }
+                logNetworkEvent('ice_candidate_gathering_complete', { 
+                    peer: conn.peer,
+                    hasReceivedRelayCandidate: hasReceivedRelayCandidate
+                });
                 console.log(`ICE Candidate gathering complete for ${conn.peer}`);
             }
         });
@@ -1314,11 +1381,19 @@ function setupConnection(conn) {
     // Set a timeout for connection establishment (30 seconds)
     connectionTimeout = setTimeout(() => {
         if (!isConnectionOpen) {
+            // Clear any pending gathering timeout
+            if (iceGatheringTimeout) {
+                clearTimeout(iceGatheringTimeout);
+                iceGatheringTimeout = null;
+            }
+            
             const debugInfo = conn.peerConnection ? {
                 iceConnectionState: conn.peerConnection.iceConnectionState,
                 iceGatheringState: conn.peerConnection.iceGatheringState,
                 signalingState: conn.peerConnection.signalingState,
-                connectionState: conn.peerConnection.connectionState
+                connectionState: conn.peerConnection.connectionState,
+                hasReceivedRelayCandidate: hasReceivedRelayCandidate,
+                iceRestartAttempted: iceRestartAttempted
             } : { message: 'No peer connection details available' };
             
             logNetworkEvent('connection_timeout', { 
@@ -1331,7 +1406,18 @@ function setupConnection(conn) {
             if (!state.isHost) {
                 updateConnectionStatus(false);
                 document.getElementById('join-btn').disabled = false;
-                alert('Connection timeout. Please check the session ID and try again.\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info');
+                
+                // Provide more helpful error message based on gathering state
+                let errorMsg = 'Connection timeout. Please check the session ID and try again.';
+                if (debugInfo.iceGatheringState === 'gathering') {
+                    errorMsg += '\n\nNote: ICE gathering did not complete. This may indicate network restrictions or firewall issues.';
+                }
+                if (!hasReceivedRelayCandidate) {
+                    errorMsg += '\nTURN relay servers may be unreachable from your network.';
+                }
+                errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
+                
+                alert(errorMsg);
             }
         }
     }, 30000);
@@ -1339,6 +1425,12 @@ function setupConnection(conn) {
     conn.on('open', () => {
         isConnectionOpen = true;
         clearTimeout(connectionTimeout);
+        
+        // Clear any pending gathering timeout
+        if (iceGatheringTimeout) {
+            clearTimeout(iceGatheringTimeout);
+            iceGatheringTimeout = null;
+        }
         
         // Only add to connections array after successfully opening
         state.connections.push(conn);
@@ -1384,6 +1476,10 @@ function setupConnection(conn) {
     
     conn.on('close', () => {
         clearTimeout(connectionTimeout);
+        if (iceGatheringTimeout) {
+            clearTimeout(iceGatheringTimeout);
+            iceGatheringTimeout = null;
+        }
         logNetworkEvent('connection_close', { peer: conn.peer });
         const index = state.connections.indexOf(conn);
         if (index > -1) {
