@@ -177,6 +177,7 @@ The app uses both STUN and TURN servers for reliable peer-to-peer connections:
 
 - **STUN Servers**: Google's public STUN servers help establish direct connections through simple NAT configurations
 - **TURN Servers**: Public TURN relay servers (openrelay.metered.ca) provide fallback for restrictive networks, mobile connections, and symmetric NAT scenarios
+- **JSON Serialization**: The app uses JSON serialization for all PeerJS data channels to ensure compatibility with Safari/iOS, which doesn't reliably support binary serialization
 
 This configuration enables connections between:
 - Desktop to Desktop
