@@ -1227,6 +1227,33 @@ function setupConnection(conn) {
         }
     }
     
+    // Helper function to attempt ICE restart
+    function attemptIceRestart(reason) {
+        if (conn.peerConnection && !iceRestartAttempted && !isConnectionOpen) {
+            iceRestartAttempted = true;
+            const pc = conn.peerConnection;
+            
+            logNetworkEvent('ice_restart_attempt', {
+                peer: conn.peer,
+                reason: reason
+            });
+            console.log(`Attempting ICE restart for ${conn.peer}: ${reason}`);
+            
+            pc.createOffer({ iceRestart: true })
+                .then(offer => pc.setLocalDescription(offer))
+                .then(() => {
+                    logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
+                })
+                .catch(err => {
+                    logNetworkEvent('ice_restart_failed', { 
+                        peer: conn.peer, 
+                        error: err.message 
+                    });
+                    console.error('ICE restart failed:', err);
+                });
+        }
+    }
+    
     logNetworkEvent('connection_setup_start', { 
         peer: conn.peer, 
         connectionId: conn.connectionId,
@@ -1270,28 +1297,8 @@ function setupConnection(conn) {
                 
                 // Attempt ICE restart if we haven't tried yet and connection failed
                 // Only restart if connection hasn't opened yet to avoid disrupting active connections
-                if (!iceRestartAttempted && pc.iceConnectionState === 'failed' && !isConnectionOpen) {
-                    iceRestartAttempted = true;
-                    logNetworkEvent('ice_restart_attempt', {
-                        peer: conn.peer,
-                        reason: 'ICE connection failed, attempting restart'
-                    });
-                    console.log(`Attempting ICE restart for ${conn.peer}`);
-                    
-                    // ICE restart by creating a new offer with iceRestart option
-                    pc.createOffer({ iceRestart: true })
-                        .then(offer => pc.setLocalDescription(offer))
-                        .then(() => {
-                            logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
-                            // Note: PeerJS handles the signaling automatically
-                        })
-                        .catch(err => {
-                            logNetworkEvent('ice_restart_failed', { 
-                                peer: conn.peer, 
-                                error: err.message 
-                            });
-                            console.error('ICE restart failed:', err);
-                        });
+                if (pc.iceConnectionState === 'failed') {
+                    attemptIceRestart('ICE connection failed');
                 }
             }
         });
@@ -1321,28 +1328,8 @@ function setupConnection(conn) {
                         });
                         console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${pc.iceGatheringState}`);
                         
-                        // Attempt ICE restart if gathering stalls and we haven't tried before
-                        if (!iceRestartAttempted && !isConnectionOpen) {
-                            iceRestartAttempted = true;
-                            logNetworkEvent('ice_restart_attempt', {
-                                peer: conn.peer,
-                                reason: 'ICE gathering timeout, attempting restart'
-                            });
-                            console.log(`Attempting ICE restart due to gathering timeout for ${conn.peer}`);
-                            
-                            pc.createOffer({ iceRestart: true })
-                                .then(offer => pc.setLocalDescription(offer))
-                                .then(() => {
-                                    logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
-                                })
-                                .catch(err => {
-                                    logNetworkEvent('ice_restart_failed', { 
-                                        peer: conn.peer, 
-                                        error: err.message 
-                                    });
-                                    console.error('ICE restart failed:', err);
-                                });
-                        }
+                        // Attempt ICE restart if gathering stalls
+                        attemptIceRestart('ICE gathering timeout');
                     }
                 }, 10000); // 10 second timeout for gathering
             }
@@ -1433,7 +1420,7 @@ function setupConnection(conn) {
                 // Build context-specific error message
                 const errorMessages = ['Connection timeout. Please check the session ID and try again.'];
                 
-                if (debugInfo.iceGatheringState === 'gathering') {
+                if (debugInfo.iceGatheringState && debugInfo.iceGatheringState === 'gathering') {
                     errorMessages.push('Note: ICE gathering did not complete. This may indicate network restrictions or firewall issues.');
                 }
                 
