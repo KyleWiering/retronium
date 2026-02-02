@@ -88,7 +88,7 @@ const STORAGE_KEYS = {
 
 let autosaveDebounceTimer = null;
 let networkLog = [];
-let networkLogSequence = 0; // Separate counter for sequence numbers
+let networkLogSequence = 0; // Independent counter that persists across log trimming to maintain unique sequence numbers
 
 
 // Get persistence metadata
@@ -233,7 +233,7 @@ function handleStorageQuotaError() {
 
 // Network logging for debug
 function logNetworkEvent(event, data) {
-    networkLogSequence++; // Increment independent counter
+    networkLogSequence++; // Start at 1 for human-readable sequence numbers
     const logEntry = {
         timestamp: new Date().toISOString(),
         sequence: networkLogSequence,
@@ -1075,7 +1075,8 @@ function updateDebugInfo() {
     }));
     
     document.getElementById('debug-connection-info').textContent = JSON.stringify(connectionInfo, null, 2);
-    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog.slice(-50), null, 2); // Show last 50 events
+    // Show last 50 events in UI for readability (full log of 200 events available via Copy Network Dump)
+    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog.slice(-50), null, 2);
 }
 
 function copyNetworkDump() {
