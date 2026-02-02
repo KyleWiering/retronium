@@ -88,6 +88,8 @@ const STORAGE_KEYS = {
 
 let autosaveDebounceTimer = null;
 let networkLog = [];
+let networkLogSequence = 0; // Separate counter for sequence numbers
+
 
 // Get persistence metadata
 function getPersistenceMeta() {
@@ -231,9 +233,10 @@ function handleStorageQuotaError() {
 
 // Network logging for debug
 function logNetworkEvent(event, data) {
+    networkLogSequence++; // Increment independent counter
     const logEntry = {
         timestamp: new Date().toISOString(),
-        sequence: networkLog.length + 1,
+        sequence: networkLogSequence,
         event: event,
         data: data
     };
@@ -255,18 +258,20 @@ function getBrowserInfo() {
     let browserVersion = 'Unknown';
     let platform = navigator.platform || 'Unknown';
     
-    if (ua.indexOf('Firefox') > -1) {
-        browserName = 'Firefox';
-        browserVersion = ua.match(/Firefox\/([0-9.]+)/)?.[1] || 'Unknown';
+    // Check Chrome/Edge first since they contain "Safari" in their UA strings
+    if (ua.indexOf('Edg') > -1 || ua.indexOf('Edge') > -1) {
+        browserName = 'Edge';
+        browserVersion = ua.match(/Edg\/([0-9.]+)/)?.[1] || 'Unknown';
     } else if (ua.indexOf('Chrome') > -1) {
         browserName = 'Chrome';
         browserVersion = ua.match(/Chrome\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Firefox') > -1) {
+        browserName = 'Firefox';
+        browserVersion = ua.match(/Firefox\/([0-9.]+)/)?.[1] || 'Unknown';
     } else if (ua.indexOf('Safari') > -1) {
+        // Safari check must come after Chrome/Edge since they contain "Safari"
         browserName = 'Safari';
         browserVersion = ua.match(/Version\/([0-9.]+)/)?.[1] || 'Unknown';
-    } else if (ua.indexOf('Edge') > -1 || ua.indexOf('Edg') > -1) {
-        browserName = 'Edge';
-        browserVersion = ua.match(/Edg\/([0-9.]+)/)?.[1] || 'Unknown';
     }
     
     return {
@@ -525,7 +530,8 @@ function hostSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
-            alert(errorMsg + '\n\nDebug Info: ' + JSON.stringify(errorDetails, null, 2));
+            errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
+            alert(errorMsg);
         });
     } catch (error) {
         logNetworkEvent('host_session_exception', { 
@@ -534,7 +540,7 @@ function hostSession() {
             stack: error.stack
         });
         console.error('Failed to create peer:', error);
-        alert('Failed to start hosting. Please try again.\n\nError: ' + error.message);
+        alert('Failed to start hosting. Please try again.\n\nError: ' + error.message + '\n\nCheck browser console (F12) for details.');
     }
 }
 
@@ -631,7 +637,8 @@ function joinSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
-            alert(errorMsg + '\n\nDebug Info:\n' + JSON.stringify(errorDetails, null, 2));
+            errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
+            alert(errorMsg);
         });
     } catch (error) {
         logNetworkEvent('join_session_exception', { 
@@ -641,7 +648,7 @@ function joinSession() {
             targetPeerId: peerId
         });
         console.error('Failed to join session:', error);
-        alert('Failed to join session. Please check the session ID.\n\nError: ' + error.message);
+        alert('Failed to join session. Please check the session ID.\n\nError: ' + error.message + '\n\nCheck browser console (F12) for details.');
     }
 }
 
@@ -1323,7 +1330,7 @@ function setupConnection(conn) {
             if (!state.isHost) {
                 updateConnectionStatus(false);
                 document.getElementById('join-btn').disabled = false;
-                alert('Connection timeout. Please check the session ID and try again.\n\nDebug: ' + JSON.stringify(debugInfo, null, 2));
+                alert('Connection timeout. Please check the session ID and try again.\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info');
             }
         }
     }, 30000);
@@ -1427,7 +1434,7 @@ function setupConnection(conn) {
         // Show error to user if this is the only/first connection attempt
         if (!state.isHost && state.connections.length === 0) {
             document.getElementById('join-btn').disabled = false;
-            const errorMsg = `Failed to establish connection: ${err.message || err.type || 'Unknown error'}\n\nDebug Info:\n${JSON.stringify(errorDetails, null, 2)}`;
+            const errorMsg = `Failed to establish connection: ${err.message || err.type || 'Unknown error'}\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info`;
             alert(errorMsg);
         }
     });
