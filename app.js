@@ -485,8 +485,11 @@ function joinSession() {
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
+            // Use JSON serialization for maximum browser compatibility, especially Safari/iOS
+            // Safari doesn't reliably support binary serialization in PeerJS data channels
             const conn = state.peer.connect(peerId, {
-                reliable: true  // Use reliable data channel for better stability
+                reliable: true,  // Use reliable data channel for better stability
+                serialization: 'json'  // Required for Safari/iOS compatibility
             });
             setupConnection(conn);
             
