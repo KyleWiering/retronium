@@ -1319,14 +1319,16 @@ function setupConnection(conn) {
             // Set timeout when gathering starts to detect stalled gathering
             if (pc.iceGatheringState === 'gathering' && !iceGatheringTimeout) {
                 iceGatheringTimeout = setTimeout(() => {
-                    if (pc.iceGatheringState === 'gathering') {
+                    // Access current peer connection state to avoid stale closure
+                    const currentPc = conn.peerConnection;
+                    if (currentPc && currentPc.iceGatheringState === 'gathering') {
                         logNetworkEvent('ice_gathering_timeout', {
                             peer: conn.peer,
-                            gatheringState: pc.iceGatheringState,
+                            gatheringState: currentPc.iceGatheringState,
                             hasReceivedRelayCandidate: hasReceivedRelayCandidate,
-                            iceConnectionState: pc.iceConnectionState
+                            iceConnectionState: currentPc.iceConnectionState
                         });
-                        console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${pc.iceGatheringState}`);
+                        console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${currentPc.iceGatheringState}`);
                         
                         // Attempt ICE restart if gathering stalls
                         attemptIceRestart('ICE gathering timeout');
@@ -1420,7 +1422,7 @@ function setupConnection(conn) {
                 // Build context-specific error message
                 const errorMessages = ['Connection timeout. Please check the session ID and try again.'];
                 
-                if (debugInfo.iceGatheringState && debugInfo.iceGatheringState === 'gathering') {
+                if (debugInfo.iceGatheringState === 'gathering') {
                     errorMessages.push('Note: ICE gathering did not complete. This may indicate network restrictions or firewall issues.');
                 }
                 
