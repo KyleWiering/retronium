@@ -475,11 +475,14 @@ function joinSession() {
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
-            const conn = state.peer.connect(peerId);
+            const conn = state.peer.connect(peerId, {
+                reliable: true  // Use reliable data channel for better stability
+            });
             setupConnection(conn);
             
             document.getElementById('join-btn').disabled = true;
-            updateConnectionStatus(true);
+            // Don't set status to connected yet - wait for connection.on('open')
+            // updateConnectionStatus will be called from setupConnection after 'open' event
             updateModeratorControls();
         });
         
@@ -1015,10 +1018,34 @@ function importSession(event) {
 }
 
 function setupConnection(conn) {
-    state.connections.push(conn);
+    let connectionTimeout;
+    let isConnectionOpen = false;
+    
+    // Set a timeout for connection establishment (30 seconds)
+    connectionTimeout = setTimeout(() => {
+        if (!isConnectionOpen) {
+            logNetworkEvent('connection_timeout', { peer: conn.peer });
+            console.warn('Connection timeout for peer:', conn.peer);
+            conn.close();
+            // Update status for clients
+            if (!state.isHost) {
+                updateConnectionStatus(false);
+                document.getElementById('join-btn').disabled = false;
+                alert('Connection timeout. Please check the session ID and try again.');
+            }
+        }
+    }, 30000);
     
     conn.on('open', () => {
+        isConnectionOpen = true;
+        clearTimeout(connectionTimeout);
+        
+        // Only add to connections array after successfully opening
+        state.connections.push(conn);
         logNetworkEvent('connection_open', { peer: conn.peer });
+        
+        // Update connection status after successfully opening
+        updateConnectionStatus(true);
         
         // Send introduction
         conn.send({
@@ -1050,6 +1077,7 @@ function setupConnection(conn) {
     });
     
     conn.on('close', () => {
+        clearTimeout(connectionTimeout);
         logNetworkEvent('connection_close', { peer: conn.peer });
         const index = state.connections.indexOf(conn);
         if (index > -1) {
@@ -1068,14 +1096,23 @@ function setupConnection(conn) {
     });
     
     conn.on('error', (err) => {
+        clearTimeout(connectionTimeout);
         logNetworkEvent('connection_error', { peer: conn.peer, error: err.toString() });
         console.error('Connection error:', err);
+        
         // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
         if (index > -1) {
             state.connections.splice(index, 1);
         }
+        
         updateConnectionStatus(state.connections.length > 0 || state.isHost);
+        
+        // Show error to user if this is the only/first connection attempt
+        if (!state.isHost && state.connections.length === 0) {
+            document.getElementById('join-btn').disabled = false;
+            alert('Failed to establish connection: ' + (err.message || err.type || 'Unknown error'));
+        }
     });
 }
 
