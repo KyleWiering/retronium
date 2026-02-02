@@ -1219,6 +1219,14 @@ function setupConnection(conn) {
     let iceGatheringTimeout = null;
     let hasReceivedRelayCandidate = false;
     
+    // Helper function to clear ICE gathering timeout
+    function clearIceGatheringTimeout() {
+        if (iceGatheringTimeout) {
+            clearTimeout(iceGatheringTimeout);
+            iceGatheringTimeout = null;
+        }
+    }
+    
     logNetworkEvent('connection_setup_start', { 
         peer: conn.peer, 
         connectionId: conn.connectionId,
@@ -1261,6 +1269,7 @@ function setupConnection(conn) {
                 });
                 
                 // Attempt ICE restart if we haven't tried yet and connection failed
+                // Only restart if connection hasn't opened yet to avoid disrupting active connections
                 if (!iceRestartAttempted && pc.iceConnectionState === 'failed' && !isConnectionOpen) {
                     iceRestartAttempted = true;
                     logNetworkEvent('ice_restart_attempt', {
@@ -1297,10 +1306,7 @@ function setupConnection(conn) {
             
             // Clear gathering timeout when complete
             if (pc.iceGatheringState === 'complete') {
-                if (iceGatheringTimeout) {
-                    clearTimeout(iceGatheringTimeout);
-                    iceGatheringTimeout = null;
-                }
+                clearIceGatheringTimeout();
             }
             
             // Set timeout when gathering starts to detect stalled gathering
@@ -1314,6 +1320,29 @@ function setupConnection(conn) {
                             iceConnectionState: pc.iceConnectionState
                         });
                         console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${pc.iceGatheringState}`);
+                        
+                        // Attempt ICE restart if gathering stalls and we haven't tried before
+                        if (!iceRestartAttempted && !isConnectionOpen) {
+                            iceRestartAttempted = true;
+                            logNetworkEvent('ice_restart_attempt', {
+                                peer: conn.peer,
+                                reason: 'ICE gathering timeout, attempting restart'
+                            });
+                            console.log(`Attempting ICE restart due to gathering timeout for ${conn.peer}`);
+                            
+                            pc.createOffer({ iceRestart: true })
+                                .then(offer => pc.setLocalDescription(offer))
+                                .then(() => {
+                                    logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
+                                })
+                                .catch(err => {
+                                    logNetworkEvent('ice_restart_failed', { 
+                                        peer: conn.peer, 
+                                        error: err.message 
+                                    });
+                                    console.error('ICE restart failed:', err);
+                                });
+                        }
                     }
                 }, 10000); // 10 second timeout for gathering
             }
@@ -1340,10 +1369,7 @@ function setupConnection(conn) {
                 console.log(`ICE Candidate for ${conn.peer}:`, candidateType, event.candidate.protocol);
             } else {
                 // null candidate means gathering is complete
-                if (iceGatheringTimeout) {
-                    clearTimeout(iceGatheringTimeout);
-                    iceGatheringTimeout = null;
-                }
+                clearIceGatheringTimeout();
                 logNetworkEvent('ice_candidate_gathering_complete', { 
                     peer: conn.peer,
                     hasReceivedRelayCandidate: hasReceivedRelayCandidate
@@ -1382,10 +1408,7 @@ function setupConnection(conn) {
     connectionTimeout = setTimeout(() => {
         if (!isConnectionOpen) {
             // Clear any pending gathering timeout
-            if (iceGatheringTimeout) {
-                clearTimeout(iceGatheringTimeout);
-                iceGatheringTimeout = null;
-            }
+            clearIceGatheringTimeout();
             
             const debugInfo = conn.peerConnection ? {
                 iceConnectionState: conn.peerConnection.iceConnectionState,
@@ -1407,17 +1430,20 @@ function setupConnection(conn) {
                 updateConnectionStatus(false);
                 document.getElementById('join-btn').disabled = false;
                 
-                // Provide more helpful error message based on gathering state
-                let errorMsg = 'Connection timeout. Please check the session ID and try again.';
-                if (debugInfo.iceGatheringState === 'gathering') {
-                    errorMsg += '\n\nNote: ICE gathering did not complete. This may indicate network restrictions or firewall issues.';
-                }
-                if (!hasReceivedRelayCandidate) {
-                    errorMsg += '\nTURN relay servers may be unreachable from your network.';
-                }
-                errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
+                // Build context-specific error message
+                const errorMessages = ['Connection timeout. Please check the session ID and try again.'];
                 
-                alert(errorMsg);
+                if (debugInfo.iceGatheringState === 'gathering') {
+                    errorMessages.push('Note: ICE gathering did not complete. This may indicate network restrictions or firewall issues.');
+                }
+                
+                if (!hasReceivedRelayCandidate) {
+                    errorMessages.push('TURN relay servers may be unreachable from your network.');
+                }
+                
+                errorMessages.push('For detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info');
+                
+                alert(errorMessages.join('\n\n'));
             }
         }
     }, 30000);
@@ -1427,10 +1453,7 @@ function setupConnection(conn) {
         clearTimeout(connectionTimeout);
         
         // Clear any pending gathering timeout
-        if (iceGatheringTimeout) {
-            clearTimeout(iceGatheringTimeout);
-            iceGatheringTimeout = null;
-        }
+        clearIceGatheringTimeout();
         
         // Only add to connections array after successfully opening
         state.connections.push(conn);
@@ -1476,10 +1499,7 @@ function setupConnection(conn) {
     
     conn.on('close', () => {
         clearTimeout(connectionTimeout);
-        if (iceGatheringTimeout) {
-            clearTimeout(iceGatheringTimeout);
-            iceGatheringTimeout = null;
-        }
+        clearIceGatheringTimeout();
         logNetworkEvent('connection_close', { peer: conn.peer });
         const index = state.connections.indexOf(conn);
         if (index > -1) {
