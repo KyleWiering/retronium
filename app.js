@@ -365,6 +365,42 @@ function initializeEventListeners() {
     document.getElementById('retention-days').value = meta.retentionDays || 30;
 }
 
+// WebRTC Configuration
+// Configure PeerJS with STUN and TURN servers for better mobile/cross-network compatibility
+// STUN helps with simple NAT traversal, TURN provides relay fallback for restrictive networks
+// NOTE: Using public TURN servers which are suitable for testing and moderate usage.
+// For production with high traffic, consider setting up your own TURN server.
+const PEER_CONFIG = {
+    config: {
+        iceServers: [
+            // Google's public STUN servers
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+            // Public TURN servers for relay fallback (critical for mobile networks)
+            // These are public credentials from openrelay.metered.ca
+            {
+                urls: 'turn:openrelay.metered.ca:80',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ],
+        iceTransportPolicy: 'all' // Try all connection types (STUN, TURN, direct)
+    }
+};
+
 // Connection Management
 function hostSession() {
     // Prompt for username
@@ -374,39 +410,7 @@ function hostSession() {
     }
     
     try {
-        // Configure PeerJS with STUN and TURN servers for better mobile/cross-network compatibility
-        // STUN helps with simple NAT traversal, TURN provides relay fallback for restrictive networks
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    // Google's public STUN servers
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' },
-                    // Public TURN servers for relay fallback (critical for mobile networks)
-                    {
-                        urls: 'turn:openrelay.metered.ca:80',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    }
-                ],
-                iceTransportPolicy: 'all' // Try all connection types (STUN, TURN, direct)
-            }
-        };
-        
-        state.peer = new Peer(peerConfig);
+        state.peer = new Peer(PEER_CONFIG);
         state.isHost = true;
         state.myRole = 'moderator'; // Host is moderator by default
         
@@ -476,39 +480,7 @@ function joinSession() {
     }
     
     try {
-        // Configure PeerJS with STUN and TURN servers for better mobile/cross-network compatibility
-        // STUN helps with simple NAT traversal, TURN provides relay fallback for restrictive networks
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    // Google's public STUN servers
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' },
-                    // Public TURN servers for relay fallback (critical for mobile networks)
-                    {
-                        urls: 'turn:openrelay.metered.ca:80',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    }
-                ],
-                iceTransportPolicy: 'all' // Try all connection types (STUN, TURN, direct)
-            }
-        };
-        
-        state.peer = new Peer(peerConfig);
+        state.peer = new Peer(PEER_CONFIG);
         state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
