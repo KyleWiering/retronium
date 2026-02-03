@@ -424,8 +424,8 @@ function initializeEventListeners() {
 // ICE Configuration Modes
 const ICE_MODES = {
     ALL: 'all', // Default: STUN + TURN servers (best compatibility)
-    STUN_ONLY: 'stun-only', // STUN servers only (no TURN relay, no Google intermediaries for candidates)
-    DIRECT: 'direct' // No ICE servers (local network only, most direct)
+    STUN_ONLY: 'stun-only', // STUN servers only (no TURN relay - still uses Google STUN for NAT traversal)
+    DIRECT: 'direct' // No ICE servers (local network only, no external servers)
 };
 
 // Get ICE server configuration preference
