@@ -83,7 +83,8 @@ function canNavigate() {
 
 const STORAGE_KEYS = {
     SESSIONS: 'retronium.sessions',
-    PERSISTENCE_META: 'retronium.persistence'
+    PERSISTENCE_META: 'retronium.persistence',
+    ICE_CONFIG: 'retronium.iceConfig'
 };
 
 let autosaveDebounceTimer = null;
@@ -342,6 +343,9 @@ function initializeEventListeners() {
     document.getElementById('close-debug-modal').addEventListener('click', closeDebugModal);
     document.getElementById('copy-network-btn').addEventListener('click', copyNetworkDump);
     
+    // ICE configuration selector
+    document.getElementById('ice-config-select').addEventListener('change', handleIceConfigChange);
+    
     // Close modals and dropdowns when clicking outside
     document.addEventListener('click', (e) => {
         const settingsMenu = document.getElementById('settings-dropdown');
@@ -404,6 +408,11 @@ function initializeEventListeners() {
     const meta = getPersistenceMeta();
     document.getElementById('persist-toggle').checked = meta.officialEnabled && meta.consent.accepted;
     document.getElementById('retention-days').value = meta.retentionDays || 30;
+    
+    // Initialize ICE config selector
+    const iceMode = getIceConfigMode();
+    document.getElementById('ice-config-select').value = iceMode;
+    updateIceConfigDescription(iceMode);
 }
 
 // WebRTC Configuration
@@ -411,36 +420,90 @@ function initializeEventListeners() {
 // STUN helps with simple NAT traversal, TURN provides relay fallback for restrictive networks
 // NOTE: Using public TURN servers which are suitable for testing and moderate usage.
 // For production with high traffic, consider setting up your own TURN server.
-const PEER_CONFIG = {
-    config: {
-        iceServers: [
-            // Google's public STUN servers
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
-            // Public TURN servers for relay fallback (critical for mobile networks)
-            // These are public credentials from openrelay.metered.ca
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
-        ],
-        iceTransportPolicy: 'all' // Try all connection types (STUN, TURN, direct)
-    }
+
+// ICE Configuration Modes
+const ICE_MODES = {
+    ALL: 'all', // Default: STUN + TURN servers (best compatibility)
+    STUN_ONLY: 'stun-only', // STUN servers only (no TURN relay - still uses Google STUN for NAT traversal)
+    DIRECT: 'direct' // No ICE servers (local network only, no external servers)
 };
+
+// Get ICE server configuration preference
+function getIceConfigMode() {
+    try {
+        const mode = localStorage.getItem(STORAGE_KEYS.ICE_CONFIG);
+        return mode || ICE_MODES.ALL;
+    } catch (e) {
+        console.warn('Failed to read ICE config preference:', e);
+        return ICE_MODES.ALL;
+    }
+}
+
+// Save ICE server configuration preference
+function saveIceConfigMode(mode) {
+    try {
+        localStorage.setItem(STORAGE_KEYS.ICE_CONFIG, mode);
+        console.log('ICE config mode saved:', mode);
+    } catch (e) {
+        console.error('Failed to save ICE config preference:', e);
+    }
+}
+
+// Get appropriate ICE servers based on configuration mode
+function getIceServers(mode) {
+    switch (mode) {
+        case ICE_MODES.DIRECT:
+            // No ICE servers - direct connection only (same network required)
+            return [];
+        
+        case ICE_MODES.STUN_ONLY:
+            // STUN servers only for NAT traversal without relay
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ];
+        
+        case ICE_MODES.ALL:
+        default:
+            // Full configuration with STUN and TURN servers
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ];
+    }
+}
+
+// Build PeerJS configuration with current ICE settings
+function getPeerConfig() {
+    const mode = getIceConfigMode();
+    return {
+        config: {
+            iceServers: getIceServers(mode),
+            iceTransportPolicy: 'all' // Try all connection types available
+        }
+    };
+}
 
 // Connection Management
 function hostSession() {
@@ -451,15 +514,17 @@ function hostSession() {
     }
     
     const browserInfo = getBrowserInfo();
+    const peerConfig = getPeerConfig();
     logNetworkEvent('host_session_start', { 
         username: state.username,
         browserInfo: browserInfo,
-        peerConfig: PEER_CONFIG
+        peerConfig: peerConfig,
+        iceMode: getIceConfigMode()
     });
-    console.log('Starting host session with browser:', browserInfo);
+    console.log('Starting host session with browser:', browserInfo, 'ICE mode:', getIceConfigMode());
     
     try {
-        state.peer = new Peer(PEER_CONFIG);
+        state.peer = new Peer(peerConfig);
         state.isHost = true;
         state.myRole = 'moderator'; // Host is moderator by default
         
@@ -558,16 +623,18 @@ function joinSession() {
     }
     
     const browserInfo = getBrowserInfo();
+    const peerConfig = getPeerConfig();
     logNetworkEvent('join_session_start', { 
         targetPeerId: peerId,
         username: state.username,
         browserInfo: browserInfo,
-        peerConfig: PEER_CONFIG
+        peerConfig: peerConfig,
+        iceMode: getIceConfigMode()
     });
-    console.log('Starting join session to peer:', peerId, 'with browser:', browserInfo);
+    console.log('Starting join session to peer:', peerId, 'with browser:', browserInfo, 'ICE mode:', getIceConfigMode());
     
     try {
-        state.peer = new Peer(PEER_CONFIG);
+        state.peer = new Peer(peerConfig);
         state.myRole = 'participant'; // Joiners are participants by default
         
         state.peer.on('open', (id) => {
@@ -736,6 +803,36 @@ function changeUserRole(peerId, newRole) {
             peerId: peerId,
             role: newRole
         });
+    }
+}
+
+// ICE Configuration Handlers
+function handleIceConfigChange(e) {
+    const newMode = e.target.value;
+    saveIceConfigMode(newMode);
+    updateIceConfigDescription(newMode);
+    
+    // Warn if session is already active
+    if (state.peer && !state.peer.destroyed) {
+        alert('Connection mode changed. You need to restart the session (disconnect and reconnect) for this change to take effect.');
+    } else {
+        alert('Connection mode updated. This will be used for your next session.');
+    }
+}
+
+function updateIceConfigDescription(mode) {
+    const description = document.getElementById('ice-config-description');
+    switch (mode) {
+        case ICE_MODES.DIRECT:
+            description.textContent = '⚠️ Direct P2P only - requires same network/VPN. No external servers.';
+            break;
+        case ICE_MODES.STUN_ONLY:
+            description.textContent = 'Uses STUN servers for NAT traversal. No TURN relay. May fail on restrictive networks.';
+            break;
+        case ICE_MODES.ALL:
+        default:
+            description.textContent = 'Best compatibility across networks. Uses STUN + TURN relay servers.';
+            break;
     }
 }
 
@@ -1069,7 +1166,10 @@ function updateDebugInfo() {
     }
     
     // Add ICE server configuration
-    connectionInfo.iceServers = PEER_CONFIG.config.iceServers.map(server => ({
+    const currentIceMode = getIceConfigMode();
+    const currentIceServers = getIceServers(currentIceMode);
+    connectionInfo.iceMode = currentIceMode;
+    connectionInfo.iceServers = currentIceServers.map(server => ({
         urls: server.urls,
         hasCredentials: !!(server.username && server.credential)
     }));
@@ -1108,7 +1208,8 @@ function copyNetworkDump() {
             }
             return connInfo;
         }),
-        iceServers: PEER_CONFIG.config.iceServers.map(server => ({
+        iceMode: getIceConfigMode(),
+        iceServers: getIceServers(getIceConfigMode()).map(server => ({
             urls: server.urls,
             hasCredentials: !!(server.username && server.credential)
         })),
