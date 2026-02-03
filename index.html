@@ -71,6 +71,20 @@
                             <input type="file" id="import-file-input" accept=".json" class="hidden">
                         </div>
                         <div class="settings-section">
+                            <h4>Connection Mode</h4>
+                            <div class="dropdown-item">
+                                <label for="ice-config-select">ICE Servers:</label>
+                                <select id="ice-config-select" class="ice-config-select">
+                                    <option value="all">All Servers (Default)</option>
+                                    <option value="stun-only">STUN Only (No Relay)</option>
+                                    <option value="direct">Direct Only (Same Network)</option>
+                                </select>
+                            </div>
+                            <div class="dropdown-item ice-config-note">
+                                <small id="ice-config-description">Best compatibility across networks</small>
+                            </div>
+                        </div>
+                        <div class="settings-section">
                             <h4>Debug</h4>
                             <button id="debug-btn" class="dropdown-item">🔍 Debug Info</button>
                         </div>
