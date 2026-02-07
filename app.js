@@ -157,11 +157,14 @@ function canNavigate() {
 
 const STORAGE_KEYS = {
     SESSIONS: 'retronium.sessions',
-    PERSISTENCE_META: 'retronium.persistence'
+    PERSISTENCE_META: 'retronium.persistence',
+    ICE_CONFIG: 'retronium.iceConfig'
 };
 
 let autosaveDebounceTimer = null;
 let networkLog = [];
+let networkLogSequence = 0; // Independent counter that persists across log trimming to maintain unique sequence numbers
+
 
 // Get persistence metadata
 function getPersistenceMeta() {
@@ -305,15 +308,54 @@ function handleStorageQuotaError() {
 
 // Network logging for debug
 function logNetworkEvent(event, data) {
-    networkLog.push({
+    networkLogSequence++; // Start at 1 for human-readable sequence numbers
+    const logEntry = {
         timestamp: new Date().toISOString(),
+        sequence: networkLogSequence,
         event: event,
         data: data
-    });
-    // Keep only last 100 events
-    if (networkLog.length > 100) {
+    };
+    networkLog.push(logEntry);
+    
+    // Also log to console for real-time debugging
+    console.log(`[${logEntry.sequence}] ${event}:`, data);
+    
+    // Keep only last 200 events (increased from 100 for better debugging)
+    if (networkLog.length > 200) {
         networkLog.shift();
     }
+}
+
+// Get browser and platform information for debugging
+function getBrowserInfo() {
+    const ua = navigator.userAgent;
+    let browserName = 'Unknown';
+    let browserVersion = 'Unknown';
+    let platform = navigator.platform || 'Unknown';
+    
+    // Check Chrome/Edge first since they contain "Safari" in their UA strings
+    if (ua.indexOf('Edg') > -1 || ua.indexOf('Edge') > -1) {
+        browserName = 'Edge';
+        browserVersion = ua.match(/Edg\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Chrome') > -1) {
+        browserName = 'Chrome';
+        browserVersion = ua.match(/Chrome\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Firefox') > -1) {
+        browserName = 'Firefox';
+        browserVersion = ua.match(/Firefox\/([0-9.]+)/)?.[1] || 'Unknown';
+    } else if (ua.indexOf('Safari') > -1) {
+        // Safari check must come after Chrome/Edge since they contain "Safari"
+        browserName = 'Safari';
+        browserVersion = ua.match(/Version\/([0-9.]+)/)?.[1] || 'Unknown';
+    }
+    
+    return {
+        browser: browserName,
+        version: browserVersion,
+        platform: platform,
+        isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua),
+        userAgent: ua
+    };
 }
 
 // Initialize the application
@@ -374,6 +416,9 @@ function initializeEventListeners() {
     // Debug modal
     document.getElementById('close-debug-modal').addEventListener('click', closeDebugModal);
     document.getElementById('copy-network-btn').addEventListener('click', copyNetworkDump);
+    
+    // ICE configuration selector
+    document.getElementById('ice-config-select').addEventListener('change', handleIceConfigChange);
     
     // Close modals and dropdowns when clicking outside
     document.addEventListener('click', (e) => {
@@ -437,6 +482,101 @@ function initializeEventListeners() {
     const meta = getPersistenceMeta();
     document.getElementById('persist-toggle').checked = meta.officialEnabled && meta.consent.accepted;
     document.getElementById('retention-days').value = meta.retentionDays || 30;
+    
+    // Initialize ICE config selector
+    const iceMode = getIceConfigMode();
+    document.getElementById('ice-config-select').value = iceMode;
+    updateIceConfigDescription(iceMode);
+}
+
+// WebRTC Configuration
+// Configure PeerJS with STUN and TURN servers for better mobile/cross-network compatibility
+// STUN helps with simple NAT traversal, TURN provides relay fallback for restrictive networks
+// NOTE: Using public TURN servers which are suitable for testing and moderate usage.
+// For production with high traffic, consider setting up your own TURN server.
+
+// ICE Configuration Modes
+const ICE_MODES = {
+    ALL: 'all', // Default: STUN + TURN servers (best compatibility)
+    STUN_ONLY: 'stun-only', // STUN servers only (no TURN relay - still uses Google STUN for NAT traversal)
+    DIRECT: 'direct' // No ICE servers (local network only, no external servers)
+};
+
+// Get ICE server configuration preference
+function getIceConfigMode() {
+    try {
+        const mode = localStorage.getItem(STORAGE_KEYS.ICE_CONFIG);
+        return mode || ICE_MODES.ALL;
+    } catch (e) {
+        console.warn('Failed to read ICE config preference:', e);
+        return ICE_MODES.ALL;
+    }
+}
+
+// Save ICE server configuration preference
+function saveIceConfigMode(mode) {
+    try {
+        localStorage.setItem(STORAGE_KEYS.ICE_CONFIG, mode);
+        console.log('ICE config mode saved:', mode);
+    } catch (e) {
+        console.error('Failed to save ICE config preference:', e);
+    }
+}
+
+// Get appropriate ICE servers based on configuration mode
+function getIceServers(mode) {
+    switch (mode) {
+        case ICE_MODES.DIRECT:
+            // No ICE servers - direct connection only (same network required)
+            return [];
+        
+        case ICE_MODES.STUN_ONLY:
+            // STUN servers only for NAT traversal without relay
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ];
+        
+        case ICE_MODES.ALL:
+        default:
+            // Full configuration with STUN and TURN servers
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ];
+    }
+}
+
+// Build PeerJS configuration with current ICE settings
+function getPeerConfig() {
+    const mode = getIceConfigMode();
+    return {
+        config: {
+            iceServers: getIceServers(mode),
+            iceTransportPolicy: 'all' // Try all connection types available
+        }
+    };
 }
 
 // Connection Management
@@ -446,6 +586,16 @@ function hostSession() {
     if (username && username.trim()) {
         state.username = username.trim();
     }
+    
+    const browserInfo = getBrowserInfo();
+    const peerConfig = getPeerConfig();
+    logNetworkEvent('host_session_start', { 
+        username: state.username,
+        browserInfo: browserInfo,
+        peerConfig: peerConfig,
+        iceMode: getIceConfigMode()
+    });
+    console.log('Starting host session with browser:', browserInfo, 'ICE mode:', getIceConfigMode());
     
     try {
         // Build PeerJS configuration from RETRONIUM_CONFIG
@@ -477,12 +627,23 @@ function hostSession() {
             document.getElementById('host-btn').disabled = true;
             updateConnectionStatus(true);
             
+            logNetworkEvent('host_peer_open', { 
+                peerId: id,
+                browserInfo: browserInfo
+            });
+            console.log('Host peer opened with ID:', id);
+            
             addParticipant(state.username, state.myPeerId, 'moderator', true);
             updateModeratorControls();
             broadcastState();
         });
         
         state.peer.on('connection', (conn) => {
+            logNetworkEvent('incoming_connection', { 
+                peer: conn.peer,
+                connectionId: conn.connectionId 
+            });
+            console.log('Incoming connection from peer:', conn.peer);
             setupConnection(conn);
         });
         
@@ -500,12 +661,24 @@ function hostSession() {
             
             // Try to reconnect
             if (!state.peer.destroyed) {
+                console.log('Attempting to reconnect host peer...');
                 state.peer.reconnect();
             }
         });
         
         state.peer.on('error', (err) => {
-            console.error('Host peer error:', err);
+            const errorDetails = {
+                type: err.type,
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                isHost: true,
+                browserInfo: browserInfo
+            };
+            
+            logNetworkEvent('host_peer_error', errorDetails);
+            console.error('Host peer error:', errorDetails);
+            
             let errorMsg = 'Connection error: ' + err.type;
             if (err.type === 'network') {
                 errorMsg = 'Network error. Please check your internet connection and try again.';
@@ -514,11 +687,17 @@ function hostSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
+            errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
             alert(errorMsg);
         });
     } catch (error) {
+        logNetworkEvent('host_session_exception', { 
+            error: error.toString(),
+            message: error.message,
+            stack: error.stack
+        });
         console.error('Failed to create peer:', error);
-        alert('Failed to start hosting. Please try again.');
+        alert('Failed to start hosting. Please try again.\n\nError: ' + error.message + '\n\nCheck browser console (F12) for details.');
     }
 }
 
@@ -534,6 +713,17 @@ function joinSession() {
     if (username && username.trim()) {
         state.username = username.trim();
     }
+    
+    const browserInfo = getBrowserInfo();
+    const peerConfig = getPeerConfig();
+    logNetworkEvent('join_session_start', { 
+        targetPeerId: peerId,
+        username: state.username,
+        browserInfo: browserInfo,
+        peerConfig: peerConfig,
+        iceMode: getIceConfigMode()
+    });
+    console.log('Starting join session to peer:', peerId, 'with browser:', browserInfo, 'ICE mode:', getIceConfigMode());
     
     try {
         // Build PeerJS configuration from RETRONIUM_CONFIG
@@ -559,11 +749,34 @@ function joinSession() {
         
         state.peer.on('open', (id) => {
             state.myPeerId = id;
-            const conn = state.peer.connect(peerId);
+            
+            logNetworkEvent('join_peer_open', { 
+                myPeerId: id,
+                targetPeerId: peerId,
+                browserInfo: browserInfo
+            });
+            console.log('Join peer opened with ID:', id, 'attempting to connect to:', peerId);
+            
+            // Use JSON serialization for maximum browser compatibility, especially Safari/iOS
+            // Safari doesn't reliably support binary serialization in PeerJS data channels
+            const connOptions = {
+                reliable: true,  // Use reliable data channel for better stability
+                serialization: 'json'  // Required for Safari/iOS compatibility
+            };
+            
+            logNetworkEvent('initiating_connection', { 
+                myPeerId: id,
+                targetPeerId: peerId,
+                options: connOptions
+            });
+            console.log('Initiating connection with options:', connOptions);
+            
+            const conn = state.peer.connect(peerId, connOptions);
             setupConnection(conn);
             
             document.getElementById('join-btn').disabled = true;
-            updateConnectionStatus(true);
+            // Don't set status to connected yet - wait for connection.on('open')
+            // updateConnectionStatus will be called from setupConnection after 'open' event
             updateModeratorControls();
         });
         
@@ -572,12 +785,25 @@ function joinSession() {
             console.warn('Client peer disconnected from signaling server');
             // Try to reconnect if not destroyed
             if (!state.peer.destroyed) {
+                console.log('Attempting to reconnect client peer...');
                 state.peer.reconnect();
             }
         });
         
         state.peer.on('error', (err) => {
-            console.error('Join peer error:', err);
+            const errorDetails = {
+                type: err.type,
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                isHost: false,
+                targetPeerId: peerId,
+                browserInfo: browserInfo
+            };
+            
+            logNetworkEvent('join_peer_error', errorDetails);
+            console.error('Join peer error:', errorDetails);
+            
             let errorMsg = 'Connection error: ' + err.type;
             if (err.type === 'network') {
                 errorMsg = 'Network error. Please check your internet connection and try again.';
@@ -588,11 +814,18 @@ function joinSession() {
             } else if (err.message) {
                 errorMsg = 'Connection error: ' + err.message;
             }
+            errorMsg += '\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info';
             alert(errorMsg);
         });
     } catch (error) {
+        logNetworkEvent('join_session_exception', { 
+            error: error.toString(),
+            message: error.message,
+            stack: error.stack,
+            targetPeerId: peerId
+        });
         console.error('Failed to join session:', error);
-        alert('Failed to join session. Please check the session ID.');
+        alert('Failed to join session. Please check the session ID.\n\nError: ' + error.message + '\n\nCheck browser console (F12) for details.');
     }
 }
 
@@ -680,6 +913,36 @@ function changeUserRole(peerId, newRole) {
             peerId: peerId,
             role: newRole
         });
+    }
+}
+
+// ICE Configuration Handlers
+function handleIceConfigChange(e) {
+    const newMode = e.target.value;
+    saveIceConfigMode(newMode);
+    updateIceConfigDescription(newMode);
+    
+    // Warn if session is already active
+    if (state.peer && !state.peer.destroyed) {
+        alert('Connection mode changed. You need to restart the session (disconnect and reconnect) for this change to take effect.');
+    } else {
+        alert('Connection mode updated. This will be used for your next session.');
+    }
+}
+
+function updateIceConfigDescription(mode) {
+    const description = document.getElementById('ice-config-description');
+    switch (mode) {
+        case ICE_MODES.DIRECT:
+            description.textContent = '⚠️ Direct P2P only - requires same network/VPN. No external servers.';
+            break;
+        case ICE_MODES.STUN_ONLY:
+            description.textContent = 'Uses STUN servers for NAT traversal. No TURN relay. May fail on restrictive networks.';
+            break;
+        case ICE_MODES.ALL:
+        default:
+            description.textContent = 'Best compatibility across networks. Uses STUN + TURN relay servers.';
+            break;
     }
 }
 
@@ -974,31 +1237,93 @@ function closeDebugModal() {
 }
 
 function updateDebugInfo() {
+    const browserInfo = getBrowserInfo();
+    
     const connectionInfo = {
+        browserInfo: browserInfo,
         myPeerId: state.myPeerId,
         isHost: state.isHost,
         myRole: state.myRole,
         connectionsCount: state.connections.length,
         participantsCount: state.participants.length,
         peerOpen: state.peer ? state.peer.open : false,
-        peerDisconnected: state.peer ? state.peer.disconnected : true
+        peerDisconnected: state.peer ? state.peer.disconnected : true,
+        peerId: state.peer ? state.peer.id : null,
+        peerDestroyed: state.peer ? state.peer.destroyed : true
     };
     
+    // Add detailed connection info for each active connection
+    if (state.connections.length > 0) {
+        connectionInfo.activeConnections = state.connections.map(conn => {
+            const connInfo = {
+                peer: conn.peer,
+                open: conn.open,
+                connectionId: conn.connectionId,
+                reliable: conn.reliable,
+                serialization: conn.serialization
+            };
+            
+            // Add ICE connection state if available
+            if (conn.peerConnection) {
+                connInfo.iceConnectionState = conn.peerConnection.iceConnectionState;
+                connInfo.iceGatheringState = conn.peerConnection.iceGatheringState;
+                connInfo.signalingState = conn.peerConnection.signalingState;
+                connInfo.connectionState = conn.peerConnection.connectionState;
+            }
+            
+            return connInfo;
+        });
+    }
+    
+    // Add ICE server configuration
+    const currentIceMode = getIceConfigMode();
+    const currentIceServers = getIceServers(currentIceMode);
+    connectionInfo.iceMode = currentIceMode;
+    connectionInfo.iceServers = currentIceServers.map(server => ({
+        urls: server.urls,
+        hasCredentials: !!(server.username && server.credential)
+    }));
+    
     document.getElementById('debug-connection-info').textContent = JSON.stringify(connectionInfo, null, 2);
-    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog, null, 2);
+    // Show last 50 events in UI for readability (full log of 200 events available via Copy Network Dump)
+    document.getElementById('debug-network-dump').textContent = JSON.stringify(networkLog.slice(-50), null, 2);
 }
 
 function copyNetworkDump() {
+    const browserInfo = getBrowserInfo();
+    
     const dump = {
+        timestamp: new Date().toISOString(),
+        browserInfo: browserInfo,
         connection: {
             myPeerId: state.myPeerId,
             isHost: state.isHost,
             myRole: state.myRole,
             connectionsCount: state.connections.length,
-            participantsCount: state.participants.length
+            participantsCount: state.participants.length,
+            peerOpen: state.peer ? state.peer.open : false,
+            peerDisconnected: state.peer ? state.peer.disconnected : true
         },
-        networkLog: networkLog,
-        timestamp: new Date().toISOString()
+        activeConnections: state.connections.map(conn => {
+            const connInfo = {
+                peer: conn.peer,
+                open: conn.open,
+                connectionId: conn.connectionId
+            };
+            if (conn.peerConnection) {
+                connInfo.iceConnectionState = conn.peerConnection.iceConnectionState;
+                connInfo.iceGatheringState = conn.peerConnection.iceGatheringState;
+                connInfo.signalingState = conn.peerConnection.signalingState;
+                connInfo.connectionState = conn.peerConnection.connectionState;
+            }
+            return connInfo;
+        }),
+        iceMode: getIceConfigMode(),
+        iceServers: getIceServers(getIceConfigMode()).map(server => ({
+            urls: server.urls,
+            hasCredentials: !!(server.username && server.credential)
+        })),
+        networkLog: networkLog
     };
     
     const dumpStr = JSON.stringify(dump, null, 2);
@@ -1099,10 +1424,249 @@ function importSession(event) {
 }
 
 function setupConnection(conn) {
-    state.connections.push(conn);
+    let connectionTimeout;
+    let isConnectionOpen = false;
+    let iceRestartAttempted = false;
+    let iceGatheringTimeout = null;
+    let hasReceivedRelayCandidate = false;
+    
+    // Helper function to clear ICE gathering timeout
+    function clearIceGatheringTimeout() {
+        if (iceGatheringTimeout) {
+            clearTimeout(iceGatheringTimeout);
+            iceGatheringTimeout = null;
+        }
+    }
+    
+    // Helper function to attempt ICE restart
+    function attemptIceRestart(reason) {
+        if (conn.peerConnection && !iceRestartAttempted && !isConnectionOpen) {
+            iceRestartAttempted = true;
+            const pc = conn.peerConnection;
+            
+            logNetworkEvent('ice_restart_attempt', {
+                peer: conn.peer,
+                reason: reason
+            });
+            console.log(`Attempting ICE restart for ${conn.peer}: ${reason}`);
+            
+            pc.createOffer({ iceRestart: true })
+                .then(offer => pc.setLocalDescription(offer))
+                .then(() => {
+                    logNetworkEvent('ice_restart_offer_created', { peer: conn.peer });
+                })
+                .catch(err => {
+                    logNetworkEvent('ice_restart_failed', { 
+                        peer: conn.peer, 
+                        error: err.message 
+                    });
+                    console.error('ICE restart failed:', err);
+                });
+        }
+    }
+    
+    logNetworkEvent('connection_setup_start', { 
+        peer: conn.peer, 
+        connectionId: conn.connectionId,
+        metadata: conn.metadata,
+        reliable: conn.reliable,
+        serialization: conn.serialization
+    });
+    
+    // Monitor ICE connection state if available
+    if (conn.peerConnection) {
+        const pc = conn.peerConnection;
+        
+        // Log initial connection state
+        logNetworkEvent('ice_connection_state', {
+            peer: conn.peer,
+            state: pc.iceConnectionState,
+            gatheringState: pc.iceGatheringState,
+            signalingState: pc.signalingState
+        });
+        
+        // Monitor ICE connection state changes
+        pc.addEventListener('iceconnectionstatechange', () => {
+            logNetworkEvent('ice_connection_state_change', {
+                peer: conn.peer,
+                state: pc.iceConnectionState,
+                gatheringState: pc.iceGatheringState,
+                signalingState: pc.signalingState
+            });
+            console.log(`ICE Connection State for ${conn.peer}:`, pc.iceConnectionState);
+            
+            // Log detailed state when connection fails
+            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+                logNetworkEvent('ice_connection_failed_details', {
+                    peer: conn.peer,
+                    iceConnectionState: pc.iceConnectionState,
+                    iceGatheringState: pc.iceGatheringState,
+                    signalingState: pc.signalingState,
+                    connectionState: pc.connectionState,
+                    hasReceivedRelayCandidate: hasReceivedRelayCandidate
+                });
+                
+                // Attempt ICE restart if we haven't tried yet and connection failed
+                // Only restart if connection hasn't opened yet to avoid disrupting active connections
+                if (pc.iceConnectionState === 'failed') {
+                    attemptIceRestart('ICE connection failed');
+                }
+            }
+        });
+        
+        // Monitor ICE gathering state changes
+        pc.addEventListener('icegatheringstatechange', () => {
+            logNetworkEvent('ice_gathering_state_change', {
+                peer: conn.peer,
+                gatheringState: pc.iceGatheringState
+            });
+            console.log(`ICE Gathering State for ${conn.peer}:`, pc.iceGatheringState);
+            
+            // Clear gathering timeout when complete
+            if (pc.iceGatheringState === 'complete') {
+                clearIceGatheringTimeout();
+            }
+            
+            // Set timeout when gathering starts to detect stalled gathering
+            if (pc.iceGatheringState === 'gathering' && !iceGatheringTimeout) {
+                iceGatheringTimeout = setTimeout(() => {
+                    // Access current peer connection state to avoid stale closure
+                    const currentPc = conn.peerConnection;
+                    if (currentPc && currentPc.iceGatheringState === 'gathering') {
+                        logNetworkEvent('ice_gathering_timeout', {
+                            peer: conn.peer,
+                            gatheringState: currentPc.iceGatheringState,
+                            hasReceivedRelayCandidate: hasReceivedRelayCandidate,
+                            iceConnectionState: currentPc.iceConnectionState
+                        });
+                        console.warn(`ICE gathering timeout for ${conn.peer}, state still: ${currentPc.iceGatheringState}`);
+                        
+                        // Attempt ICE restart if gathering stalls
+                        attemptIceRestart('ICE gathering timeout');
+                    }
+                }, 10000); // 10 second timeout for gathering
+            }
+        });
+        
+        // Monitor ICE candidates
+        pc.addEventListener('icecandidate', (event) => {
+            if (event.candidate) {
+                const candidateType = event.candidate.type;
+                
+                // Track if we received a relay (TURN) candidate
+                if (candidateType === 'relay') {
+                    hasReceivedRelayCandidate = true;
+                }
+                
+                logNetworkEvent('ice_candidate', {
+                    peer: conn.peer,
+                    candidate: event.candidate.candidate,
+                    type: candidateType,
+                    protocol: event.candidate.protocol,
+                    address: event.candidate.address,
+                    port: event.candidate.port
+                });
+                console.log(`ICE Candidate for ${conn.peer}:`, candidateType, event.candidate.protocol);
+            } else {
+                // null candidate means gathering is complete
+                clearIceGatheringTimeout();
+                logNetworkEvent('ice_candidate_gathering_complete', { 
+                    peer: conn.peer,
+                    hasReceivedRelayCandidate: hasReceivedRelayCandidate
+                });
+                console.log(`ICE Candidate gathering complete for ${conn.peer}`);
+            }
+        });
+        
+        // Monitor signaling state changes
+        pc.addEventListener('signalingstatechange', () => {
+            logNetworkEvent('signaling_state_change', {
+                peer: conn.peer,
+                state: pc.signalingState
+            });
+            console.log(`Signaling State for ${conn.peer}:`, pc.signalingState);
+        });
+        
+        // Monitor connection state changes (newer API)
+        if (pc.connectionState !== undefined) {
+            pc.addEventListener('connectionstatechange', () => {
+                logNetworkEvent('connection_state_change', {
+                    peer: conn.peer,
+                    state: pc.connectionState
+                });
+                console.log(`Connection State for ${conn.peer}:`, pc.connectionState);
+            });
+        }
+    } else {
+        logNetworkEvent('no_peer_connection', { 
+            peer: conn.peer,
+            message: 'RTCPeerConnection not accessible for detailed monitoring'
+        });
+    }
+    
+    // Set a timeout for connection establishment (30 seconds)
+    connectionTimeout = setTimeout(() => {
+        if (!isConnectionOpen) {
+            // Clear any pending gathering timeout
+            clearIceGatheringTimeout();
+            
+            const debugInfo = conn.peerConnection ? {
+                iceConnectionState: conn.peerConnection.iceConnectionState,
+                iceGatheringState: conn.peerConnection.iceGatheringState,
+                signalingState: conn.peerConnection.signalingState,
+                connectionState: conn.peerConnection.connectionState,
+                hasReceivedRelayCandidate: hasReceivedRelayCandidate,
+                iceRestartAttempted: iceRestartAttempted
+            } : { message: 'No peer connection details available' };
+            
+            logNetworkEvent('connection_timeout', { 
+                peer: conn.peer,
+                debugInfo: debugInfo
+            });
+            console.warn('Connection timeout for peer:', conn.peer, 'Debug info:', debugInfo);
+            conn.close();
+            // Update status for clients
+            if (!state.isHost) {
+                updateConnectionStatus(false);
+                document.getElementById('join-btn').disabled = false;
+                
+                // Build context-specific error message
+                const errorMessages = ['Connection timeout. Please check the session ID and try again.'];
+                
+                if (debugInfo.iceGatheringState === 'gathering') {
+                    errorMessages.push('Note: ICE gathering did not complete. This may indicate network restrictions or firewall issues.');
+                }
+                
+                if (!hasReceivedRelayCandidate) {
+                    errorMessages.push('TURN relay servers may be unreachable from your network.');
+                }
+                
+                errorMessages.push('For detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info');
+                
+                alert(errorMessages.join('\n\n'));
+            }
+        }
+    }, 30000);
     
     conn.on('open', () => {
-        logNetworkEvent('connection_open', { peer: conn.peer });
+        isConnectionOpen = true;
+        clearTimeout(connectionTimeout);
+        
+        // Clear any pending gathering timeout
+        clearIceGatheringTimeout();
+        
+        // Only add to connections array after successfully opening
+        state.connections.push(conn);
+        logNetworkEvent('connection_open', { 
+            peer: conn.peer,
+            finalState: conn.peerConnection ? {
+                iceConnectionState: conn.peerConnection.iceConnectionState,
+                connectionState: conn.peerConnection.connectionState
+            } : 'unknown'
+        });
+        
+        // Update connection status after successfully opening
+        updateConnectionStatus(true);
         
         // Send introduction
         conn.send({
@@ -1134,6 +1698,8 @@ function setupConnection(conn) {
     });
     
     conn.on('close', () => {
+        clearTimeout(connectionTimeout);
+        clearIceGatheringTimeout();
         logNetworkEvent('connection_close', { peer: conn.peer });
         const index = state.connections.indexOf(conn);
         if (index > -1) {
@@ -1152,14 +1718,42 @@ function setupConnection(conn) {
     });
     
     conn.on('error', (err) => {
-        logNetworkEvent('connection_error', { peer: conn.peer, error: err.toString() });
-        console.error('Connection error:', err);
+        clearTimeout(connectionTimeout);
+        
+        // Enhanced error logging with all available details
+        const errorDetails = {
+            peer: conn.peer,
+            errorMessage: err.message || 'Unknown error',
+            errorType: err.type || 'Unknown type',
+            errorString: err.toString(),
+            errorName: err.name,
+            errorStack: err.stack
+        };
+        
+        if (conn.peerConnection) {
+            errorDetails.iceConnectionState = conn.peerConnection.iceConnectionState;
+            errorDetails.iceGatheringState = conn.peerConnection.iceGatheringState;
+            errorDetails.signalingState = conn.peerConnection.signalingState;
+            errorDetails.connectionState = conn.peerConnection.connectionState;
+        }
+        
+        logNetworkEvent('connection_error', errorDetails);
+        console.error('Connection error details:', errorDetails);
+        
         // Handle connection errors gracefully
         const index = state.connections.indexOf(conn);
         if (index > -1) {
             state.connections.splice(index, 1);
         }
+        
         updateConnectionStatus(state.connections.length > 0 || state.isHost);
+        
+        // Show error to user if this is the only/first connection attempt
+        if (!state.isHost && state.connections.length === 0) {
+            document.getElementById('join-btn').disabled = false;
+            const errorMsg = `Failed to establish connection: ${err.message || err.type || 'Unknown error'}\n\nFor detailed troubleshooting:\n1. Open browser console (F12)\n2. Check Settings → Debug Info`;
+            alert(errorMsg);
+        }
     });
 }
 
