@@ -143,7 +143,7 @@ jobs:
         run: |
           # Install dependencies for screenshot
           sudo apt-get update
-          sudo apt-get install -y chromium-browser xvfb
+          sudo apt-get install -y chromium xvfb
           
           # Start virtual display
           export DISPLAY=:99
@@ -151,7 +151,7 @@ jobs:
           sleep 2
           
           # Take screenshot using chromium
-          chromium-browser --headless --disable-gpu --screenshot=test-screenshot-local.png \
+          chromium --headless --disable-gpu --screenshot=test-screenshot-local.png \
             --window-size=1280,720 --hide-scrollbars test-summary-local.html || true
 
       - name: Upload screenshot
@@ -293,7 +293,7 @@ jobs:
         run: |
           # Install dependencies for screenshot
           sudo apt-get update
-          sudo apt-get install -y chromium-browser xvfb
+          sudo apt-get install -y chromium xvfb
           
           # Start virtual display
           export DISPLAY=:99
@@ -301,7 +301,7 @@ jobs:
           sleep 2
           
           # Take screenshot using chromium
-          chromium-browser --headless --disable-gpu --screenshot=test-screenshot-cloud.png \
+          chromium --headless --disable-gpu --screenshot=test-screenshot-cloud.png \
             --window-size=1280,720 --hide-scrollbars test-summary-cloud.html || true
 
       - name: Upload screenshot
@@ -350,10 +350,9 @@ jobs:
           #### Self-Hosted Results
           EOF
           
-          # Add screenshot if available
+          # Add screenshot link if available
           if [ -f "artifacts/test-screenshot-local/test-screenshot-local.png" ]; then
-            # Convert to base64 and add to comment
-            echo "![Self-Hosted Test Results](data:image/png;base64,$(base64 -w 0 artifacts/test-screenshot-local/test-screenshot-local.png))" >> comment.md
+            echo "_Screenshot available in workflow artifacts_" >> comment.md
           else
             echo "_Screenshot not available_" >> comment.md
           fi
@@ -362,7 +361,7 @@ jobs:
           echo "#### Cloud Results" >> comment.md
           
           if [ -f "artifacts/test-screenshot-cloud/test-screenshot-cloud.png" ]; then
-            echo "![Cloud Test Results](data:image/png;base64,$(base64 -w 0 artifacts/test-screenshot-cloud/test-screenshot-cloud.png))" >> comment.md
+            echo "_Screenshot available in workflow artifacts_" >> comment.md
           else
             echo "_Screenshot not available_" >> comment.md
           fi

@@ -6,8 +6,6 @@
 .github/workflows/
   └── test-p2p.yml          # GitHub Actions workflow
 
-CI_CD_IMPLEMENTATION.md     # Implementation summary
-CI_CD_TESTING.md            # Architecture diagrams
 README.md                   # Updated with CI/CD section
 ```
 

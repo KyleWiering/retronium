@@ -2,8 +2,8 @@
 // Server Configuration
 // ============================================================================
 // Configuration for PeerJS signaling server and ICE (STUN/TURN) servers.
-// Set RETRONIUM_USE_LOCAL_SERVERS to true to use self-hosted infrastructure.
-// This is auto-detected based on hostname for Docker environments.
+// Auto-detected based on hostname for Docker/local environments.
+// Can be overridden via URL parameter: ?useLocalServers=true or ?useLocalServers=false
 
 const RETRONIUM_CONFIG = (() => {
     // Auto-detect if running in Docker/local environment
