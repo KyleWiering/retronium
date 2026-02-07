@@ -16,8 +16,10 @@ rm -f test-results/*.json
 # Build and run the test containers
 echo
 echo "Building and starting test environment..."
+set +e
 docker compose up --build --abort-on-container-exit
 EXIT_CODE=$?
+set -e
 
 # Display results
 echo

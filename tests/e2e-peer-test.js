@@ -156,10 +156,10 @@ async function runHostTest(page) {
     const cards = await page.$$eval('.card', cards =>
         cards.map(c => c.textContent)
     );
-    const hasClientCard = cards >= 2;
+    const hasClientCard = cards.length >= 2;
     result.cardsExchanged = hasClientCard;
     logStep('Card sync check', hasClientCard, {
-        expectedCards: 2, actualCards: cards, note: 'Phase 1: Cards are encrypted/blurred for non-authors'
+        expectedCards: 2, actualCards: cards.length, note: 'Phase 1: Cards are encrypted/blurred for non-authors'
         
     });
 
@@ -244,10 +244,10 @@ async function runClientTest(page) {
     const cards = await page.$$eval('.card', cards =>
         cards.map(c => c.textContent)
     );
-    const hasHostCard = cards >= 2;
+    const hasHostCard = cards.length >= 2;
     result.cardsExchanged = hasHostCard;
     logStep('Card sync check', hasHostCard, {
-        expectedCards: 2, actualCards: cards, note: 'Phase 1: Cards are encrypted/blurred for non-authors'
+        expectedCards: 2, actualCards: cards.length, note: 'Phase 1: Cards are encrypted/blurred for non-authors'
         
     });
 
