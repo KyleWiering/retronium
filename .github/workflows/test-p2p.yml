@@ -1,0 +1,466 @@
+name: P2P Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  test-self-hosted:
+    name: Test Self-Hosted Infrastructure
+    runs-on: ubuntu-latest
+    outputs:
+      overall_success: ${{ steps.test_local.outputs.overall_success }}
+      host_steps: ${{ steps.test_local.outputs.host_steps }}
+      client_steps: ${{ steps.test_local.outputs.client_steps }}
+      test_results_exist: ${{ steps.test_local.outputs.test_results_exist }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run self-hosted tests
+        id: test_local
+        run: |
+          echo "Running self-hosted P2P tests..."
+          chmod +x run-tests.sh
+          
+          # Run tests and capture output
+          ./run-tests.sh > test-output-local.log 2>&1 || TEST_EXIT_CODE=$?
+          
+          # Check if results exist
+          if [ -f "test-results/host-result.json" ] && [ -f "test-results/client-result.json" ]; then
+            echo "test_results_exist=true" >> $GITHUB_OUTPUT
+            
+            # Extract key metrics
+            HOST_SUCCESS=$(jq -r '.success' test-results/host-result.json)
+            CLIENT_SUCCESS=$(jq -r '.success' test-results/client-result.json)
+            HOST_STEPS=$(jq -r '.steps | length' test-results/host-result.json)
+            CLIENT_STEPS=$(jq -r '.steps | length' test-results/client-result.json)
+            CARDS_EXCHANGED=$(jq -r '.cardsExchanged' test-results/host-result.json)
+            
+            echo "host_success=$HOST_SUCCESS" >> $GITHUB_OUTPUT
+            echo "client_success=$CLIENT_SUCCESS" >> $GITHUB_OUTPUT
+            echo "host_steps=$HOST_STEPS" >> $GITHUB_OUTPUT
+            echo "client_steps=$CLIENT_STEPS" >> $GITHUB_OUTPUT
+            echo "cards_exchanged=$CARDS_EXCHANGED" >> $GITHUB_OUTPUT
+            
+            # Overall success if both peers completed steps
+            if [ "$HOST_STEPS" -ge 6 ] && [ "$CLIENT_STEPS" -ge 6 ]; then
+              echo "overall_success=true" >> $GITHUB_OUTPUT
+            else
+              echo "overall_success=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "test_results_exist=false" >> $GITHUB_OUTPUT
+            echo "overall_success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-local
+          path: |
+            test-results/*.json
+            test-output-local.log
+          retention-days: 30
+
+      - name: Create test summary visualization
+        if: always() && steps.test_local.outputs.test_results_exist == 'true'
+        run: |
+          # Create an HTML visualization of results
+          cat > test-summary-local.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+              .container { max-width: 800px; margin: 0 auto; background: #252526; padding: 20px; border-radius: 8px; }
+              h1 { color: #4ec9b0; border-bottom: 2px solid #4ec9b0; padding-bottom: 10px; }
+              .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+              .success { background: #1e3a1e; border-left: 4px solid #4ec9b0; }
+              .failure { background: #3a1e1e; border-left: 4px solid #f48771; }
+              .metric { display: inline-block; margin: 10px 20px 10px 0; }
+              .metric-label { color: #858585; font-size: 0.9em; }
+              .metric-value { color: #4ec9b0; font-size: 1.5em; font-weight: bold; }
+              .peer { background: #2d2d30; padding: 15px; margin: 10px 0; border-radius: 5px; }
+              .peer-name { color: #569cd6; font-weight: bold; font-size: 1.1em; }
+              .step { padding: 5px; margin: 5px 0; }
+              .step-success { color: #4ec9b0; }
+              .step-failure { color: #f48771; }
+              pre { background: #1e1e1e; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>🔄 Retronium P2P Test Results (Self-Hosted)</h1>
+              <div class="status $([ "${{ steps.test_local.outputs.overall_success }}" == "true" ] && echo "success" || echo "failure")">
+                <strong>Overall Status:</strong> $([ "${{ steps.test_local.outputs.overall_success }}" == "true" ] && echo "✅ PASSED" || echo "❌ FAILED")
+              </div>
+              
+              <div style="margin: 20px 0;">
+                <div class="metric">
+                  <div class="metric-label">Infrastructure</div>
+                  <div class="metric-value">Self-Hosted</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Host Steps</div>
+                  <div class="metric-value">${{ steps.test_local.outputs.host_steps }}</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Client Steps</div>
+                  <div class="metric-value">${{ steps.test_local.outputs.client_steps }}</div>
+                </div>
+              </div>
+
+              <div class="peer">
+                <div class="peer-name">👑 Host Peer</div>
+                <pre>$(cat test-results/host-result.json | jq -C '.')</pre>
+              </div>
+
+              <div class="peer">
+                <div class="peer-name">👤 Client Peer</div>
+                <pre>$(cat test-results/client-result.json | jq -C '.')</pre>
+              </div>
+            </div>
+          </body>
+          </html>
+          EOF
+
+      - name: Take screenshot of test results
+        if: always() && steps.test_local.outputs.test_results_exist == 'true'
+        run: |
+          # Install dependencies for screenshot
+          sudo apt-get update
+          sudo apt-get install -y chromium xvfb
+          
+          # Start virtual display
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x720x24 &
+          sleep 2
+          
+          # Take screenshot using chromium
+          chromium --headless --disable-gpu --screenshot=test-screenshot-local.png \
+            --window-size=1280,720 --hide-scrollbars test-summary-local.html || true
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshot-local
+          path: test-screenshot-local.png
+          retention-days: 30
+
+  test-cloud:
+    name: Test Cloud Infrastructure
+    runs-on: ubuntu-latest
+    outputs:
+      overall_success: ${{ steps.test_cloud.outputs.overall_success }}
+      host_steps: ${{ steps.test_cloud.outputs.host_steps }}
+      client_steps: ${{ steps.test_cloud.outputs.client_steps }}
+      test_results_exist: ${{ steps.test_cloud.outputs.test_results_exist }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run cloud tests
+        id: test_cloud
+        run: |
+          echo "Running cloud P2P tests (PeerJS Cloud + Google STUN)..."
+          chmod +x run-tests.sh
+          
+          # Run cloud tests
+          docker compose -f docker-compose.cloud.yml up --build --abort-on-container-exit > test-output-cloud.log 2>&1 || TEST_EXIT_CODE=$?
+          
+          # Check if results exist
+          if [ -f "test-results/host-result.json" ] && [ -f "test-results/client-result.json" ]; then
+            echo "test_results_exist=true" >> $GITHUB_OUTPUT
+            
+            # Extract key metrics
+            HOST_SUCCESS=$(jq -r '.success' test-results/host-result.json)
+            CLIENT_SUCCESS=$(jq -r '.success' test-results/client-result.json)
+            HOST_STEPS=$(jq -r '.steps | length' test-results/host-result.json)
+            CLIENT_STEPS=$(jq -r '.steps | length' test-results/client-result.json)
+            SESSION_ID=$(jq -r '.sessionId' test-results/host-result.json)
+            
+            echo "host_success=$HOST_SUCCESS" >> $GITHUB_OUTPUT
+            echo "client_success=$CLIENT_SUCCESS" >> $GITHUB_OUTPUT
+            echo "host_steps=$HOST_STEPS" >> $GITHUB_OUTPUT
+            echo "client_steps=$CLIENT_STEPS" >> $GITHUB_OUTPUT
+            echo "session_id=$SESSION_ID" >> $GITHUB_OUTPUT
+            
+            # Overall success if both peers completed steps
+            if [ "$HOST_STEPS" -ge 6 ] && [ "$CLIENT_STEPS" -ge 6 ]; then
+              echo "overall_success=true" >> $GITHUB_OUTPUT
+            else
+              echo "overall_success=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "test_results_exist=false" >> $GITHUB_OUTPUT
+            echo "overall_success=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Cleanup
+          docker compose -f docker-compose.cloud.yml down
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-cloud
+          path: |
+            test-results/*.json
+            test-output-cloud.log
+          retention-days: 30
+
+      - name: Create test summary visualization
+        if: always() && steps.test_cloud.outputs.test_results_exist == 'true'
+        run: |
+          # Create an HTML visualization of results
+          cat > test-summary-cloud.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+              .container { max-width: 800px; margin: 0 auto; background: #252526; padding: 20px; border-radius: 8px; }
+              h1 { color: #569cd6; border-bottom: 2px solid #569cd6; padding-bottom: 10px; }
+              .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+              .success { background: #1e3a1e; border-left: 4px solid #4ec9b0; }
+              .failure { background: #3a1e1e; border-left: 4px solid #f48771; }
+              .metric { display: inline-block; margin: 10px 20px 10px 0; }
+              .metric-label { color: #858585; font-size: 0.9em; }
+              .metric-value { color: #569cd6; font-size: 1.5em; font-weight: bold; }
+              .peer { background: #2d2d30; padding: 15px; margin: 10px 0; border-radius: 5px; }
+              .peer-name { color: #569cd6; font-weight: bold; font-size: 1.1em; }
+              pre { background: #1e1e1e; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 0.85em; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>☁️ Retronium P2P Test Results (Cloud)</h1>
+              <div class="status $([ "${{ steps.test_cloud.outputs.overall_success }}" == "true" ] && echo "success" || echo "failure")">
+                <strong>Overall Status:</strong> $([ "${{ steps.test_cloud.outputs.overall_success }}" == "true" ] && echo "✅ PASSED" || echo "❌ FAILED")
+              </div>
+              
+              <div style="margin: 20px 0;">
+                <div class="metric">
+                  <div class="metric-label">Infrastructure</div>
+                  <div class="metric-value">PeerJS Cloud + Google STUN</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Host Steps</div>
+                  <div class="metric-value">${{ steps.test_cloud.outputs.host_steps }}</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Client Steps</div>
+                  <div class="metric-value">${{ steps.test_cloud.outputs.client_steps }}</div>
+                </div>
+              </div>
+
+              <div class="peer">
+                <div class="peer-name">👑 Host Peer</div>
+                <pre>$(cat test-results/host-result.json | jq -C '.' 2>/dev/null || echo "Results not available")</pre>
+              </div>
+
+              <div class="peer">
+                <div class="peer-name">👤 Client Peer</div>
+                <pre>$(cat test-results/client-result.json | jq -C '.' 2>/dev/null || echo "Results not available")</pre>
+              </div>
+            </div>
+          </body>
+          </html>
+          EOF
+
+      - name: Take screenshot of test results
+        if: always() && steps.test_cloud.outputs.test_results_exist == 'true'
+        run: |
+          # Install dependencies for screenshot
+          sudo apt-get update
+          sudo apt-get install -y chromium xvfb
+          
+          # Start virtual display
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x720x24 &
+          sleep 2
+          
+          # Take screenshot using chromium
+          chromium --headless --disable-gpu --screenshot=test-screenshot-cloud.png \
+            --window-size=1280,720 --hide-scrollbars test-summary-cloud.html || true
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshot-cloud
+          path: test-screenshot-cloud.png
+          retention-days: 30
+
+  report-results:
+    name: Report Test Results to PR
+    runs-on: ubuntu-latest
+    needs: [test-self-hosted, test-cloud]
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create PR comment body
+        id: create_comment
+        run: |
+          # Create comment with test results
+          cat > comment.md << 'EOF'
+          ## 🧪 P2P Test Results
+
+          ### Self-Hosted Infrastructure
+          **Status:** ${{ needs.test-self-hosted.outputs.overall_success == 'true' && '✅ PASSED' || '❌ FAILED' }}
+          - **Host Steps Completed:** ${{ needs.test-self-hosted.outputs.host_steps }}
+          - **Client Steps Completed:** ${{ needs.test-self-hosted.outputs.client_steps }}
+          - **Infrastructure:** PeerJS (self-hosted) + Coturn STUN/TURN
+
+          ### Cloud Infrastructure
+          **Status:** ${{ needs.test-cloud.outputs.overall_success == 'true' && '✅ PASSED' || '❌ FAILED' }}
+          - **Host Steps Completed:** ${{ needs.test-cloud.outputs.host_steps }}
+          - **Client Steps Completed:** ${{ needs.test-cloud.outputs.client_steps }}
+          - **Infrastructure:** PeerJS Cloud + Google STUN
+
+          ---
+
+          ### 📸 Test Screenshots
+
+          #### Self-Hosted Results
+          EOF
+          
+          # Add screenshot link if available
+          if [ -f "artifacts/test-screenshot-local/test-screenshot-local.png" ]; then
+            echo "_Screenshot available in workflow artifacts_" >> comment.md
+          else
+            echo "_Screenshot not available_" >> comment.md
+          fi
+          
+          echo "" >> comment.md
+          echo "#### Cloud Results" >> comment.md
+          
+          if [ -f "artifacts/test-screenshot-cloud/test-screenshot-cloud.png" ]; then
+            echo "_Screenshot available in workflow artifacts_" >> comment.md
+          else
+            echo "_Screenshot not available_" >> comment.md
+          fi
+          
+          echo "" >> comment.md
+          echo "---" >> comment.md
+          echo "" >> comment.md
+          echo "<details><summary>📋 View Full Test Results</summary>" >> comment.md
+          echo "" >> comment.md
+          
+          # Add local results
+          if [ -f "artifacts/test-results-local/host-result.json" ]; then
+            echo "**Self-Hosted Host Results:**" >> comment.md
+            echo '```json' >> comment.md
+            cat artifacts/test-results-local/host-result.json | jq '.' >> comment.md
+            echo '```' >> comment.md
+            echo "" >> comment.md
+          fi
+          
+          if [ -f "artifacts/test-results-local/client-result.json" ]; then
+            echo "**Self-Hosted Client Results:**" >> comment.md
+            echo '```json' >> comment.md
+            cat artifacts/test-results-local/client-result.json | jq '.' >> comment.md
+            echo '```' >> comment.md
+          fi
+          
+          echo "</details>" >> comment.md
+          
+          # Save comment body
+          echo "comment_body<<EOF" >> $GITHUB_OUTPUT
+          cat comment.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post comment to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const commentBody = fs.readFileSync('comment.md', 'utf8');
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🧪 P2P Test Results')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Set check status
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const localSuccess = '${{ needs.test-self-hosted.outputs.overall_success }}' === 'true';
+            const cloudSuccess = '${{ needs.test-cloud.outputs.overall_success }}' === 'true';
+            const overallSuccess = localSuccess && cloudSuccess;
+            
+            const conclusion = overallSuccess ? 'success' : 'failure';
+            const summary = overallSuccess 
+              ? '✅ All P2P tests passed'
+              : '❌ Some P2P tests failed';
+            
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'P2P Tests',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: 'P2P Test Results',
+                summary: summary,
+                text: `Self-Hosted: ${localSuccess ? '✅ PASSED' : '❌ FAILED'}\nCloud: ${cloudSuccess ? '✅ PASSED' : '❌ FAILED'}`
+              }
+            });
+
+
+

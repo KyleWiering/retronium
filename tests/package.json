@@ -1,0 +1,13 @@
+{
+  "name": "retronium-e2e-tests",
+  "version": "1.0.0",
+  "description": "E2E tests for Retronium P2P functionality",
+  "main": "e2e-peer-test.js",
+  "scripts": {
+    "test": "node e2e-peer-test.js"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
+

@@ -171,27 +171,178 @@ python3 -m http.server 8080
 
 **Note**: For testing across different devices on the same network, replace `localhost` with your machine's local IP address (e.g., `http://192.168.1.100:8080/`).
 
-### WebRTC Connection Configuration
+### Docker-Based E2E Testing
 
-The app uses both STUN and TURN servers for reliable peer-to-peer connections:
+For automated testing with isolated browser instances and self-hosted P2P infrastructure:
 
-- **STUN Servers**: Google's public STUN servers help establish direct connections through simple NAT configurations
-- **TURN Servers**: Public TURN relay servers (openrelay.metered.ca) provide fallback for restrictive networks, mobile connections, and symmetric NAT scenarios
-- **JSON Serialization**: The app uses JSON serialization for all PeerJS data channels to ensure compatibility with Safari/iOS, which doesn't reliably support binary serialization
+#### Prerequisites
+- Docker and Docker Compose installed
 
-This configuration enables connections between:
-- Desktop to Desktop
-- Desktop to Mobile (iPhone, Android)
-- Mobile to Mobile
+#### Running Tests
 
-**Note for Production**: The app currently uses public TURN servers which are suitable for testing and moderate usage. For production deployments with high traffic or strict security requirements, consider:
-- Setting up your own TURN server (e.g., using [coturn](https://github.com/coturn/coturn))
-- Using a commercial WebRTC infrastructure provider
-- Monitoring TURN server usage to ensure reliability
+**Windows:**
+```cmd
+run-tests.bat
+```
+
+**Linux/macOS:**
+```bash
+chmod +x run-tests.sh
+./run-tests.sh
+```
+
+#### What the Tests Do
+
+1. **Spin up self-hosted infrastructure**:
+   - PeerJS signaling server (no external cloud dependency)
+   - Coturn STUN/TURN server (no Google dependency)
+   - Nginx web server serving the application
+
+2. **Launch two isolated browser instances**:
+   - Browser 1 (Host): Creates a session
+   - Browser 2 (Client): Joins the session
+
+3. **Execute P2P tests**:
+   - Connection establishment
+   - Card exchange between peers
+   - State synchronization
+
+4. **Output JSON results** for AI parsing:
+   - `test-results/host-result.json`
+   - `test-results/client-result.json`
+
+#### Test Result Format
+
+```json
+{
+  "role": "host",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "success": true,
+  "steps": [
+    { "step": "Navigate to app", "success": true },
+    { "step": "Session created", "success": true, "sessionId": "..." }
+  ],
+  "errors": [],
+  "cardsExchanged": true,
+  "sessionId": "abc123",
+  "connectionInfo": {
+    "statusText": "Connected",
+    "participants": ["TestHost", "TestClient"]
+  }
+}
+```
+
+### Self-Hosted P2P Infrastructure
+
+The application supports fully self-hosted P2P infrastructure without any external dependencies:
+
+#### Configuration
+
+The app auto-detects the environment:
+- **Local/Docker**: Uses self-hosted PeerJS + coturn
+- **Production**: Falls back to PeerJS cloud + Google STUN
+
+Override with URL parameter:
+- `?useLocalServers=true` - Force local servers
+- `?useLocalServers=false` - Force cloud servers
+
+#### Running Self-Hosted Servers
+
+Start all infrastructure services:
+```bash
+docker compose up peerjs-server coturn webserver
+```
+
+Access the app at `http://localhost:8080`
+
+#### Coturn TURN Server Credentials
+
+For self-hosted deployments:
+- **Username**: `retronium`
+- **Password**: `retronium123`
+
+**⚠️ Security Note**: Change these credentials for production use. Edit `server/turnserver.conf`.
+
+**TURN/STUN Notes**: The app uses Google's public STUN servers for NAT traversal. For production use with restrictive firewalls, consider setting up your own TURN server.
+
+## CI/CD Testing
+
+### Automated P2P Tests on Pull Requests
+
+Every pull request automatically runs comprehensive P2P tests to verify networking functionality:
+
+#### Test Coverage
+
+1. **Self-Hosted Infrastructure Test**
+   - Uses local PeerJS signaling server (port 9000)
+   - Uses local Coturn STUN/TURN (ports 3478/5349)
+   - Verifies P2P connection without external dependencies
+
+2. **Cloud Infrastructure Test**
+   - Uses PeerJS Cloud signaling
+   - Uses Google STUN servers
+   - Verifies P2P connection via public internet
+
+#### Test Workflow
+
+The GitHub Actions workflow (`.github/workflows/test-p2p.yml`):
+1. Builds Docker containers with isolated browser instances
+2. Runs both test configurations in parallel
+3. Captures test results as JSON
+4. Generates visual HTML reports
+5. Takes screenshots of test results
+6. Posts results back to the PR with:
+   - ✅/❌ Status badges
+   - Test metrics (steps completed, connection time)
+   - Embedded screenshots
+   - Full JSON results in collapsible details
+
+#### Viewing Test Results
+
+Test results appear automatically as a comment on your PR:
+
+```
+🧪 P2P Test Results
+
+Self-Hosted Infrastructure
+✅ PASSED
+- Host Steps Completed: 8
+- Client Steps Completed: 9
+
+Cloud Infrastructure  
+✅ PASSED
+- Host Steps Completed: 8
+- Client Steps Completed: 9
+
+📸 [Screenshots and detailed results...]
+```
+
+#### Test Artifacts
+
+All test runs save artifacts for 30 days:
+- `test-results-local/` - Self-hosted test JSON results
+- `test-results-cloud/` - Cloud test JSON results
+- `test-screenshot-local.png` - Self-hosted results visualization
+- `test-screenshot-cloud.png` - Cloud results visualization
+- `test-output-*.log` - Full test execution logs
+
+#### Running Tests Locally
+
+Run the same tests that CI runs:
+
+```bash
+# Self-hosted infrastructure test
+./run-tests.sh
+
+# Cloud infrastructure test  
+docker compose -f docker-compose.cloud.yml up --abort-on-container-exit
+```
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+All PRs will automatically run P2P tests to verify networking functionality. Ensure tests pass before requesting review.
 
 ## License
 
