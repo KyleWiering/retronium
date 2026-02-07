@@ -1,4 +1,78 @@
+// ============================================================================
+// Server Configuration
+// ============================================================================
+// Configuration for PeerJS signaling server and ICE (STUN/TURN) servers.
+// Set RETRONIUM_USE_LOCAL_SERVERS to true to use self-hosted infrastructure.
+// This is auto-detected based on hostname for Docker environments.
+
+const RETRONIUM_CONFIG = (() => {
+    // Auto-detect if running in Docker/local environment
+    const hostname = window.location.hostname;
+    const isLocalEnv = hostname === 'localhost' ||
+                       hostname === '127.0.0.1' ||
+                       hostname === 'webserver' ||
+                       hostname.startsWith('172.') ||
+                       hostname.startsWith('192.168.');
+
+    // Check for explicit override via URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const forceLocal = urlParams.get('useLocalServers') === 'true';
+    const forceCloud = urlParams.get('useLocalServers') === 'false';
+
+    const useLocalServers = forceCloud ? false : (forceLocal || isLocalEnv);
+
+    if (useLocalServers) {
+        // Self-hosted configuration (Docker/LAN)
+        // Determine PeerJS server host based on environment
+        const peerHost = hostname === 'webserver' ? 'peerjs-server' : hostname;
+        const turnHost = hostname === 'webserver' ? 'coturn' : hostname;
+
+        return {
+            useLocalServers: true,
+            peerjs: {
+                host: peerHost,
+                port: 9000,
+                path: '/peerjs',
+                secure: false,
+                debug: 2
+            },
+            iceServers: [
+                // Self-hosted STUN
+                { urls: `stun:${turnHost}:3478` },
+                // Self-hosted TURN (for NAT traversal)
+                {
+                    urls: `turn:${turnHost}:3478`,
+                    username: 'retronium',
+                    credential: 'retronium123'
+                }
+            ]
+        };
+    } else {
+        // Cloud/production configuration (PeerJS cloud + public STUN servers)
+        return {
+            useLocalServers: false,
+            peerjs: {
+                // Uses PeerJS cloud server by default when no host specified
+            },
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ]
+        };
+    }
+})();
+
+// Log configuration on startup
+console.log('[Retronium] Server configuration:', RETRONIUM_CONFIG.useLocalServers ? 'LOCAL' : 'CLOUD');
+console.log('[Retronium] PeerJS config:', RETRONIUM_CONFIG.peerjs);
+console.log('[Retronium] ICE servers:', RETRONIUM_CONFIG.iceServers.map(s => s.urls));
+
+// ============================================================================
 // Application State
+// ============================================================================
 const state = {
     currentPhase: 1,
     myPeerId: null,
@@ -374,19 +448,24 @@ function hostSession() {
     }
     
     try {
-        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        // Build PeerJS configuration from RETRONIUM_CONFIG
         const peerConfig = {
             config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' }
-                ]
-            }
+                iceServers: RETRONIUM_CONFIG.iceServers
+            },
+            debug: RETRONIUM_CONFIG.peerjs.debug || 0
         };
-        
+
+        // Add self-hosted server settings if configured
+        if (RETRONIUM_CONFIG.useLocalServers) {
+            peerConfig.host = RETRONIUM_CONFIG.peerjs.host;
+            peerConfig.port = RETRONIUM_CONFIG.peerjs.port;
+            peerConfig.path = RETRONIUM_CONFIG.peerjs.path;
+            peerConfig.secure = RETRONIUM_CONFIG.peerjs.secure;
+        }
+
+        console.log('[Retronium] Creating peer with config:', peerConfig);
+
         state.peer = new Peer(peerConfig);
         state.isHost = true;
         state.myRole = 'moderator'; // Host is moderator by default
@@ -457,19 +536,24 @@ function joinSession() {
     }
     
     try {
-        // Configure PeerJS with explicit STUN servers for better mobile compatibility
+        // Build PeerJS configuration from RETRONIUM_CONFIG
         const peerConfig = {
             config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' }
-                ]
-            }
+                iceServers: RETRONIUM_CONFIG.iceServers
+            },
+            debug: RETRONIUM_CONFIG.peerjs.debug || 0
         };
-        
+
+        // Add self-hosted server settings if configured
+        if (RETRONIUM_CONFIG.useLocalServers) {
+            peerConfig.host = RETRONIUM_CONFIG.peerjs.host;
+            peerConfig.port = RETRONIUM_CONFIG.peerjs.port;
+            peerConfig.path = RETRONIUM_CONFIG.peerjs.path;
+            peerConfig.secure = RETRONIUM_CONFIG.peerjs.secure;
+        }
+
+        console.log('[Retronium] Creating peer with config:', peerConfig);
+
         state.peer = new Peer(peerConfig);
         state.myRole = 'participant'; // Joiners are participants by default
         

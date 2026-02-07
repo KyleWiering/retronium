@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install peer server
+RUN npm install peer
+
+# Copy server script
+COPY peerjs-server.js .
+
+EXPOSE 9000
+
+CMD ["node", "peerjs-server.js"]
+

@@ -17,6 +17,12 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# Test results (keep .gitkeep)
+test-results/*.json
+
+# Node modules (for test container)
+node_modules/
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
